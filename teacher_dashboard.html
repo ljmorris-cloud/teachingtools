@@ -1,0 +1,345 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Year 8 Teacher Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      line-height: 1.5;
+      color: #222;
+    }
+    input, button, select {
+      font: inherit;
+      padding: 10px;
+      margin: 5px 0;
+    }
+    button { cursor: pointer; }
+    .card {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 12px 0;
+    }
+    .card button { margin-right: 8px; }
+    .response {
+      background: #f4f4f4;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 12px 0;
+    }
+    #lessonArea, #questionArea, #responseArea {
+      display: none;
+    }
+    #status { color: #555; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+
+  <h1>Year 8 Teacher Dashboard</h1>
+
+  <div id="login">
+    <h2>Teacher login</h2>
+    <input id="email" type="email" placeholder="Email">
+    <br>
+    <input id="password" type="password" placeholder="Password">
+    <br>
+    <button id="loginButton">Log in</button>
+  </div>
+
+  <p id="status">Please log in.</p>
+
+  <div id="classArea">
+    <h2>Your classes</h2>
+    <div id="classes"></div>
+  </div>
+
+  <div id="lessonArea">
+    <hr>
+    <button id="backToClasses">← Back to classes</button>
+    <h2 id="classTitle"></h2>
+    <h3>Lessons</h3>
+    <div id="lessons"></div>
+  </div>
+
+  <div id="questionArea">
+    <hr>
+    <button id="backToLessons">← Back to lessons</button>
+    <h2 id="lessonTitle"></h2>
+    <h3>Select a question</h3>
+    <select id="questionSelect">
+      <option value="">Choose a question</option>
+    </select>
+    <br>
+    <button id="collectButton">Collect responses</button>
+    <button id="revealButton" disabled>Reveal responses</button>
+  </div>
+
+  <div id="responseArea">
+    <hr>
+    <h2>Student responses</h2>
+    <p id="responseCount"></p>
+    <div id="responses"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://agkixedmhuxskfdrfbcn.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_F6OHTBrA9vYWhWLUagmWvA_tojihS8U";
+
+    const supabaseClient = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_KEY
+    );
+
+    let currentClassId = null;
+    let currentSessionId = null;
+    let collectedResponses = [];
+
+    const status = document.getElementById("status");
+
+    document.getElementById("loginButton").addEventListener(
+      "click", async () => {
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+
+        const { error } = await supabaseClient.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) {
+          status.textContent = "Login failed: " + error.message;
+          return;
+        }
+
+        document.getElementById("login").style.display = "none";
+        status.textContent = "Logged in successfully.";
+
+        loadClasses();
+      }
+    );
+
+    async function loadClasses() {
+      hideAllAreas();
+      document.getElementById("classArea").style.display = "block";
+
+      status.textContent = "Loading classes...";
+
+      const { data, error } = await supabaseClient
+        .from("classes")
+        .select("id, name")
+        .order("name");
+
+      if (error) {
+        status.textContent = "Could not load classes: " + error.message;
+        return;
+      }
+
+      status.textContent = "Classes retrieved: " + data.length;
+
+      const container = document.getElementById("classes");
+      container.innerHTML = "";
+
+      data.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const heading = document.createElement("h3");
+        heading.textContent = item.name;
+
+        const button = document.createElement("button");
+        button.textContent = "Open class";
+        button.addEventListener("click", () => {
+          currentClassId = item.id;
+          loadLessons(item.name);
+        });
+
+        card.appendChild(heading);
+        card.appendChild(button);
+        container.appendChild(card);
+      });
+    }
+
+    async function loadLessons(className) {
+      hideAllAreas();
+      document.getElementById("lessonArea").style.display = "block";
+      document.getElementById("classTitle").textContent = className;
+      document.getElementById("lessons").textContent = "Loading lessons...";
+
+      status.textContent = "Loading lessons...";
+
+      const { data, error } = await supabaseClient
+        .from("sessions")
+        .select("id, worksheet_name, created_at, active")
+        .eq("class_id", currentClassId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        document.getElementById("lessons").textContent =
+          "Could not load lessons: " + error.message;
+        return;
+      }
+
+      const container = document.getElementById("lessons");
+      container.innerHTML = "";
+
+      if (data.length === 0) {
+        container.textContent = "No lessons found.";
+        return;
+      }
+
+      data.forEach(lesson => {
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const heading = document.createElement("h3");
+        heading.textContent = lesson.worksheet_name;
+
+        const state = document.createElement("p");
+        state.textContent = lesson.active ? "Active lesson" : "Inactive lesson";
+
+        const button = document.createElement("button");
+        button.textContent = "Open lesson";
+        button.disabled = !lesson.active;
+        button.addEventListener("click", () => {
+          currentSessionId = lesson.id;
+          loadQuestions(lesson.worksheet_name);
+        });
+
+        card.appendChild(heading);
+        card.appendChild(state);
+        card.appendChild(button);
+        container.appendChild(card);
+      });
+
+      status.textContent = "Lessons retrieved: " + data.length;
+    }
+
+    async function loadQuestions(lessonName) {
+      hideAllAreas();
+      document.getElementById("questionArea").style.display = "block";
+      document.getElementById("lessonTitle").textContent = lessonName;
+
+      status.textContent = "Loading questions...";
+
+      const { data, error } = await supabaseClient
+        .from("questions")
+        .select("id, question_code, question_text")
+        .eq("session_id", currentSessionId)
+        .order("question_code");
+
+      if (error) {
+        status.textContent = "Could not load questions: " + error.message;
+        return;
+      }
+
+      const select = document.getElementById("questionSelect");
+      select.innerHTML = '<option value="">Choose a question</option>';
+
+      data.forEach(question => {
+        const option = document.createElement("option");
+        option.value = question.id;
+        option.textContent =
+          question.question_code + ": " + question.question_text;
+        select.appendChild(option);
+      });
+
+      status.textContent = "Questions retrieved: " + data.length;
+    }
+
+    document.getElementById("collectButton").addEventListener(
+      "click", async () => {
+        const questionId =
+          document.getElementById("questionSelect").value;
+
+        if (!questionId) {
+          status.textContent = "Please select a question first.";
+          return;
+        }
+
+        status.textContent = "Collecting responses...";
+
+        document.getElementById("responseArea").style.display = "none";
+        document.getElementById("revealButton").disabled = true;
+        collectedResponses = [];
+
+        const { data, error } = await supabaseClient
+          .from("responses")
+          .select("student_id, student_name, answer, submitted_at")
+          .eq("session_id", currentSessionId)
+          .eq("question_id", questionId)
+          .order("submitted_at");
+
+        if (error) {
+          status.textContent =
+            "Could not collect responses: " + error.message;
+          return;
+        }
+
+        collectedResponses = data;
+
+        status.textContent =
+          "Collected " + data.length + " responses. Ready to reveal.";
+
+        document.getElementById("responseCount").textContent =
+          data.length + " student response(s) collected.";
+
+        document.getElementById("revealButton").disabled = false;
+      }
+    );
+
+    document.getElementById("revealButton").addEventListener(
+      "click", () => {
+        const container = document.getElementById("responses");
+        container.innerHTML = "";
+
+        if (collectedResponses.length === 0) {
+          container.textContent = "No responses have been submitted yet.";
+        }
+
+        collectedResponses.forEach((response, index) => {
+          const card = document.createElement("div");
+          card.className = "response";
+
+          const heading = document.createElement("strong");
+          heading.textContent = response.student_name || ("Student " + (index + 1));
+
+          const answer = document.createElement("p");
+          answer.textContent = response.answer || "(No answer entered)";
+
+          card.appendChild(heading);
+          card.appendChild(answer);
+          container.appendChild(card);
+        });
+
+        document.getElementById("responseArea").style.display = "block";
+        status.textContent = "Responses revealed.";
+      }
+    );
+
+    document.getElementById("backToClasses").addEventListener(
+      "click", loadClasses
+    );
+
+    document.getElementById("backToLessons").addEventListener(
+      "click", () => loadLessons(
+        document.getElementById("classTitle").textContent
+      )
+    );
+
+    function hideAllAreas() {
+      document.getElementById("classArea").style.display = "none";
+      document.getElementById("lessonArea").style.display = "none";
+      document.getElementById("questionArea").style.display = "none";
+      document.getElementById("responseArea").style.display = "none";
+    }
+  </script>
+</body>
+</html>
