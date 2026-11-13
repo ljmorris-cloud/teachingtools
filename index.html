@@ -253,12 +253,15 @@
       <h3 id="manageLessonTitle">Manage lesson</h3>
       <p>Use this access key in the worksheet's <code>ACCESS_TOKEN</code> constant.</p>
       <div class="key-line"><span class="key-value" id="lessonAccessKey"></span><button class="small-button" id="copyAccessKey" type="button">Copy key</button></div>
-      <h3>Paste your questions</h3>
-      <p>Paste or type your questions into the box below, with one question per line. Blank lines are ignored. The dashboard will number them automatically: 1, 2, 3, and so on.</p>
+      <h3>Add a list of questions</h3>
+      <p>Paste your entire question list into the box below. Put each question on a new line. Blank lines and leading list numbers (such as “1.” or “Question 1:”) are removed automatically. The dashboard numbers the questions for you.</p>
       <form id="bulkQuestionForm" class="manage-form">
-        <textarea id="bulkQuestionText" style="min-height:220px" placeholder="Paste your questions here.
-Put each question on a new line." required></textarea>
-        <div class="manage-actions"><button class="primary" type="submit">Add all questions</button></div>
+        <textarea id="bulkQuestionText" style="min-height:220px" placeholder="Paste your questions here — one question per line.
+
+What is an algorithm?
+What is a variable?
+Explain the purpose of a loop." required></textarea>
+        <div class="manage-actions"><button class="primary" type="submit">Add question list</button></div>
       </form>
       <h3 style="margin-top:28px">Existing questions</h3>
       <p>Questions are numbered automatically. You can edit the wording or delete a question.</p>
@@ -482,9 +485,12 @@ Put each question on a new line." required></textarea>
   $("bulkQuestionForm").addEventListener("submit", async e => {
     e.preventDefault();
     if (!managedLesson) return;
+    // Accept a pasted list. Question codes are generated automatically.
     const questions = $("bulkQuestionText").value
       .split(/\r?\n/)
       .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => line.replace(/^(?:(?:question\s*)?\d+\s*[.):\-]\s*)/i, "").trim())
       .filter(Boolean);
     if (!questions.length) { setStatus("Paste at least one question.", true); return; }
 
