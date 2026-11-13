@@ -266,6 +266,13 @@
   <section id="classArea" hidden>
     <h2>Your classes</h2>
     <p class="sub">Choose a class to see its lessons.</p>
+    <div class="manage-panel">
+      <h3>＋ Create a new class</h3>
+      <form id="createClassForm" class="manage-form">
+        <input id="newClassName" type="text" maxlength="100" placeholder="Class name (e.g. 8A Digital Technologies)" required>
+        <div class="manage-actions"><button class="primary" type="submit">Create class</button></div>
+      </form>
+    </div>
     <div id="classes" class="grid"></div>
   </section>
 
@@ -393,11 +400,34 @@ Explain the purpose of a loop." required></textarea>
     loadClasses();
   }
 
-  supabaseClient.auth.getSession().then(({ data }) => {
-    if (data.session) onLoggedIn();
+  supabaseClient.auth.getSession().then(async ({ data }) => {
+    if (!data.session) return;
+    // The student worksheet signs in anonymously. If that happened in this browser it replaces the
+    // teacher's login, which then sees no classes. Treat an anonymous session as logged out.
+    if (data.session.user && data.session.user.is_anonymous) {
+      await supabaseClient.auth.signOut({ scope: "local" });
+      setStatus("You were signed out because a student worksheet was opened in this browser. Please log in again.");
+      return;
+    }
+    onLoggedIn();
   });
 
   /* ---------- Classes ---------- */
+  $("createClassForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const name = $("newClassName").value.trim();
+    if (!name) return;
+    const submit = e.submitter;
+    if (submit) submit.disabled = true;
+    setStatus("Creating class...");
+    const { error } = await supabaseClient.from("classes").insert({ name });
+    if (submit) submit.disabled = false;
+    if (error) { setStatus("Could not create class: " + error.message, true); return; }
+    $("newClassName").value = "";
+    setStatus("Class created.");
+    await loadClasses();
+  });
+
   async function loadClasses() {
     stopCollecting();
     $("questionManager").hidden = true;
@@ -409,7 +439,7 @@ Explain the purpose of a loop." required></textarea>
     setStatus("");
     const box = $("classes");
     box.innerHTML = "";
-    if (!data.length) { box.textContent = "No classes found."; return; }
+    if (!data.length) { box.textContent = "No classes found. Create your first class above."; return; }
     data.forEach(item => {
       const card = document.createElement("div");
       card.className = "card";
