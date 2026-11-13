@@ -253,14 +253,15 @@
       <h3 id="manageLessonTitle">Manage lesson</h3>
       <p>Use this access key in the worksheet's <code>ACCESS_TOKEN</code> constant.</p>
       <div class="key-line"><span class="key-value" id="lessonAccessKey"></span><button class="small-button" id="copyAccessKey" type="button">Copy key</button></div>
-      <h3>Add a question</h3>
-      <form id="addQuestionForm" class="manage-form">
-        <input id="newQuestionCode" type="text" maxlength="40" placeholder="Question code (e.g. q1 or 1t1)" required>
-        <textarea id="newQuestionText" maxlength="5000" placeholder="Question text" required></textarea>
-        <div class="manage-actions"><button class="primary" type="submit">Add question</button></div>
+      <h3>Paste your questions</h3>
+      <p>Paste or type your questions into the box below, with one question per line. Blank lines are ignored. The dashboard will number them automatically: 1, 2, 3, and so on.</p>
+      <form id="bulkQuestionForm" class="manage-form">
+        <textarea id="bulkQuestionText" style="min-height:220px" placeholder="Paste your questions here.
+Put each question on a new line." required></textarea>
+        <div class="manage-actions"><button class="primary" type="submit">Add all questions</button></div>
       </form>
       <h3 style="margin-top:28px">Existing questions</h3>
-      <p>Question codes must match the codes used by your worksheet. Questions are displayed in question-code order.</p>
+      <p>Questions are numbered automatically. You can edit the wording or delete a question.</p>
       <div id="managedQuestions"></div>
     </section>
   </section>
@@ -478,34 +479,48 @@
     }
   });
 
-  $("addQuestionForm").addEventListener("submit", async e => {
+  $("bulkQuestionForm").addEventListener("submit", async e => {
     e.preventDefault();
     if (!managedLesson) return;
-    const code = $("newQuestionCode").value.trim();
-    const questionText = $("newQuestionText").value.trim();
-    if (!code || !questionText) return;
+    const questions = $("bulkQuestionText").value
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+    if (!questions.length) { setStatus("Paste at least one question.", true); return; }
+
     const button = e.submitter;
     if (button) button.disabled = true;
+    setStatus("Adding " + questions.length + " questions...");
+
     const { data: existing, error: checkError } = await supabaseClient
-      .from("questions").select("id").eq("session_id", managedLesson.id).eq("question_code", code);
+      .from("questions")
+      .select("question_code")
+      .eq("session_id", managedLesson.id);
     if (checkError) {
       if (button) button.disabled = false;
-      setStatus("Could not check question code: " + checkError.message, true);
+      setStatus("Could not check existing questions: " + checkError.message, true);
       return;
     }
-    if (existing.length) {
-      if (button) button.disabled = false;
-      setStatus("That question code is already used in this lesson.", true);
-      return;
-    }
-    const { error } = await supabaseClient.from("questions").insert({
-      session_id: managedLesson.id, question_code: code, question_text: questionText
-    });
+
+    // New questions use simple numeric codes: 1, 2, 3 ...
+    const usedNumbers = (existing || [])
+      .map(q => Number(q.question_code))
+      .filter(n => Number.isInteger(n) && n > 0);
+    let nextNumber = usedNumbers.length ? Math.max(...usedNumbers) + 1 : 1;
+    const rows = questions.map(questionText => ({
+      session_id: managedLesson.id,
+      question_code: String(nextNumber++),
+      question_text: questionText
+    }));
+
+    const { error } = await supabaseClient.from("questions").insert(rows);
     if (button) button.disabled = false;
-    if (error) { setStatus("Could not add question: " + error.message, true); return; }
-    $("newQuestionCode").value = "";
-    $("newQuestionText").value = "";
-    setStatus("Question added.");
+    if (error) {
+      setStatus("Could not add questions: " + error.message, true);
+      return;
+    }
+    $("bulkQuestionText").value = "";
+    setStatus(questions.length + " questions added.");
     await loadManagedQuestions();
   });
 
@@ -514,54 +529,49 @@
     const { data, error } = await supabaseClient
       .from("questions")
       .select("id, question_code, question_text")
-      .eq("session_id", managedLesson.id)
-      .order("question_code", { ascending: true });
+      .eq("session_id", managedLesson.id);
     const box = $("managedQuestions");
     box.innerHTML = "";
     if (error) { box.textContent = "Could not load questions: " + error.message; return; }
     if (!data.length) { box.textContent = "No questions have been added yet."; return; }
 
-    data.forEach(question => {
+    data.sort((a, b) => {
+      const an = Number(a.question_code), bn = Number(b.question_code);
+      if (Number.isInteger(an) && Number.isInteger(bn)) return an - bn;
+      return String(a.question_code).localeCompare(String(b.question_code));
+    });
+
+    data.forEach((question, index) => {
       const row = document.createElement("div");
       row.className = "question-row";
-      const code = document.createElement("input");
-      code.value = question.question_code;
-      code.maxLength = 40;
-      code.setAttribute("aria-label", "Question code");
+      row.style.gridTemplateColumns = "minmax(0, 1fr) auto";
       const text = document.createElement("textarea");
       text.value = question.question_text || "";
       text.maxLength = 5000;
-      text.setAttribute("aria-label", "Question text");
+      const displayNumber = /^\d+$/.test(String(question.question_code)) ? question.question_code : String(index + 1);
+      text.setAttribute("aria-label", "Question " + displayNumber);
+      text.placeholder = "Question " + displayNumber;
       const actions = document.createElement("div");
       actions.className = "row-actions";
       const save = document.createElement("button");
       save.className = "small-button";
       save.textContent = "Save";
       save.addEventListener("click", async () => {
-        const nextCode = code.value.trim();
         const nextText = text.value.trim();
-        if (!nextCode || !nextText) { setStatus("Question code and text cannot be blank.", true); return; }
-        const { data: duplicate, error: duplicateError } = await supabaseClient
-          .from("questions").select("id").eq("session_id", managedLesson.id)
-          .eq("question_code", nextCode).neq("id", question.id);
-        if (duplicateError) { setStatus("Could not check question code: " + duplicateError.message, true); return; }
-        if (duplicate.length) { setStatus("That question code is already used in this lesson.", true); return; }
+        if (!nextText) { setStatus("Question text cannot be blank.", true); return; }
         save.disabled = true;
-        const { error } = await supabaseClient.from("questions").update({
-          question_code: nextCode, question_text: nextText
-        }).eq("id", question.id);
+        const { error } = await supabaseClient.from("questions")
+          .update({ question_text: nextText }).eq("id", question.id);
         save.disabled = false;
         if (error) { setStatus("Could not save question: " + error.message, true); return; }
-        question.question_code = nextCode;
         question.question_text = nextText;
-        setStatus("Question saved.");
-        await loadManagedQuestions();
+        setStatus("Question " + displayNumber + " saved.");
       });
       const remove = document.createElement("button");
       remove.className = "small-button";
       remove.textContent = "Delete";
       remove.addEventListener("click", async () => {
-        if (!confirm("Delete this question? Its associated student responses may also prevent deletion.")) return;
+        if (!confirm("Delete question " + displayNumber + "? Existing student responses may prevent deletion.")) return;
         remove.disabled = true;
         const { error } = await supabaseClient.from("questions").delete().eq("id", question.id);
         remove.disabled = false;
@@ -570,7 +580,12 @@
         await loadManagedQuestions();
       });
       actions.append(save, remove);
-      row.append(code, text, actions);
+      const number = document.createElement("strong");
+      number.textContent = "Question " + displayNumber;
+      number.style.color = "var(--yellow)";
+      const wrap = document.createElement("div");
+      wrap.append(number, text);
+      row.append(wrap, actions);
       box.appendChild(row);
     });
   }
@@ -593,26 +608,38 @@
     setStatus(data.length ? "" : "This lesson has no questions yet.");
     const sel = $("questionSelect");
     sel.innerHTML = '<option value="">Choose a question</option>';
-    const groups = {};
-    data.forEach(q => {
-      const m = SHEET[q.question_code];
-      const skill = m ? m[0] : 0;
-      (groups[skill] = groups[skill] || []).push({ q, pos: m ? m[1] : 0 });
-    });
-    [1, 2, 3, 4, 5, 0].forEach(skill => {
-      if (!groups[skill]) return;
-      const og = document.createElement("optgroup");
-      og.label = skill ? "Skill " + skill + ": " + SKILLS[skill] : "Not on the current worksheet";
-      groups[skill]
-        .sort((a, b) => a.pos - b.pos || String(a.q.question_code).localeCompare(String(b.q.question_code)))
-        .forEach(({ q, pos }) => {
-          const o = document.createElement("option");
-          o.value = q.id;
-          o.textContent = (skill ? skill + "." + pos : "–") + "   " + q.question_text;
-          og.appendChild(o);
-        });
-      sel.appendChild(og);
-    });
+    const numericCodes = data.every(q => /^\d+$/.test(String(q.question_code)));
+    if (numericCodes) {
+      data.sort((a, b) => Number(a.question_code) - Number(b.question_code));
+      data.forEach(q => {
+        const option = document.createElement("option");
+        option.value = q.id;
+        option.textContent = "Question " + q.question_code + "   " + q.question_text;
+        sel.appendChild(option);
+      });
+    } else {
+      // Keep the existing worksheet's skill grouping for lessons that use its legacy codes.
+      const groups = {};
+      data.forEach(q => {
+        const m = SHEET[q.question_code];
+        const skill = m ? m[0] : 0;
+        (groups[skill] = groups[skill] || []).push({ q, pos: m ? m[1] : 0 });
+      });
+      [1, 2, 3, 4, 5, 0].forEach(skill => {
+        if (!groups[skill]) return;
+        const group = document.createElement("optgroup");
+        group.label = skill ? "Skill " + skill + ": " + SKILLS[skill] : "Questions";
+        groups[skill]
+          .sort((a, b) => a.pos - b.pos || String(a.q.question_code).localeCompare(String(b.q.question_code)))
+          .forEach(({ q, pos }, index) => {
+            const option = document.createElement("option");
+            option.value = q.id;
+            option.textContent = (skill ? skill + "." + pos : "Question") + "   " + q.question_text;
+            group.appendChild(option);
+          });
+        sel.appendChild(group);
+      });
+    }
   }
 
   $("questionSelect").addEventListener("change", e => {
