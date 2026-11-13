@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Year 8 Teacher Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
@@ -194,13 +195,16 @@
   .key-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
   .key-value { overflow-wrap: anywhere; color: var(--yellow); font-family: ui-monospace, monospace; font-weight: 700; }
   .question-row {
-    display: grid; grid-template-columns: 42px 1fr auto; gap: 12px; align-items: center;
+    display: grid; grid-template-columns: 42px 1fr; gap: 12px; align-items: center;
     padding: 14px; margin: 12px 0; border: 2px solid var(--line);
     border-radius: 14px; background: var(--dark); cursor: grab;
   }
   .question-row.dragging { opacity: .4; border-color: var(--cyan); }
   .question-row.drag-over { border-color: var(--yellow); background: var(--panel2); }
-  .question-row .drag-handle { color: var(--muted); font-size: 1.5rem; text-align: center; cursor: grab; user-select: none; }
+  .question-row .drag-handle { color: var(--cyan); font-size: 1.8rem; text-align: center; cursor: grab; user-select: none; touch-action: none; font-weight: 800; }
+  .question-row .drag-handle:active { cursor: grabbing; }
+  .question-row.sortable-ghost { opacity: .25; border-color: var(--yellow); }
+  .question-row.sortable-chosen { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(63,224,245,.15); }
   .question-row input, .question-row textarea {
     width: 100%; padding: 10px 12px; border: 2px solid var(--line);
     border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit;
@@ -208,8 +212,12 @@
   .question-row textarea { min-height: 66px; resize: vertical; }
   .question-row .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .question-number { display: block; color: var(--yellow); margin-bottom: 6px; }
-  @media (max-width: 700px) { .question-row { grid-template-columns: 32px 1fr; } .question-row .row-actions { grid-column: 2; } }
+  @media (max-width: 700px) { .question-row { grid-template-columns: 32px 1fr; } }
   .small-button { padding: 9px 13px; font-size: .92rem; }
+  button.danger { border-color: rgba(255,79,154,.55); color: #ff8ab9; background: rgba(255,79,154,.08); }
+  button.danger:hover:not(:disabled) { border-color: var(--pink); background: rgba(255,79,154,.18); }
+  .question-row .row-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .question-row .row-actions { display:flex; justify-content:flex-end; margin-top:8px; }
   @media (max-width: 700px) {
     header.top { padding: 18px 20px; }
     main { padding: 28px 20px 70px; }
@@ -270,7 +278,7 @@ Explain the purpose of a loop." required></textarea>
         <div class="manage-actions"><button class="primary" type="submit">Add question list</button></div>
       </form>
       <h3 style="margin-top:28px">Questions in this lesson</h3>
-      <p>Questions are saved automatically when added. Drag the boxes to change their order; the numbers update automatically.</p>
+      <p>Questions are saved automatically when added or edited. Drag the ⠿ handle on any box to change its order; the numbers update automatically.</p>
       <div id="managedQuestions"></div>
     </section>
   </section>
@@ -433,13 +441,41 @@ Explain the purpose of a loop." required></textarea>
       const manage = document.createElement("button");
       manage.textContent = "Manage questions / access key";
       manage.addEventListener("click", () => openQuestionManager(lesson));
-      card.append(badge, h, meta, open, manage);
+      const remove = document.createElement("button");
+      remove.className = "small-button danger";
+      remove.type = "button";
+      remove.textContent = "Delete lesson";
+      remove.addEventListener("click", () => deleteLesson(lesson));
+      card.append(badge, h, meta, open, manage, remove);
       box.appendChild(card);
     });
   }
 
   /* ---------- Create and manage lessons ---------- */
   let managedLesson = null;
+
+  async function deleteLesson(lesson) {
+    const confirmed = confirm(
+      `Delete "${lesson.worksheet_name}"?\n\nThis permanently deletes the lesson, all its questions, and all student responses. This cannot be undone.`
+    );
+    if (!confirmed) return;
+    setStatus("Deleting lesson and its student responses...");
+    const { error } = await supabaseClient.rpc("delete_teacher_lesson", { p_session_id: lesson.id });
+    if (error) {
+      setStatus("Could not delete lesson: " + error.message, true);
+      return;
+    }
+    if (managedLesson && managedLesson.id === lesson.id) {
+      managedLesson = null;
+      $("questionManager").hidden = true;
+    }
+    if (currentSessionId === lesson.id) {
+      stopCollecting();
+      currentSessionId = null;
+    }
+    setStatus("Lesson and associated responses deleted.");
+    await loadLessons($("classTitle").textContent);
+  }
 
   $("createLessonForm").addEventListener("submit", async e => {
     e.preventDefault();
@@ -539,17 +575,47 @@ Explain the purpose of a loop." required></textarea>
 
   async function saveQuestionOrder(rows) {
     setStatus("Saving question order...");
-    for (let index = 0; index < rows.length; index++) {
-      const { error } = await supabaseClient.from("questions")
-        .update({ sort_order: index + 1 }).eq("id", rows[index].dataset.questionId);
-      if (error) {
-        setStatus("Could not save the new order: " + error.message, true);
-        await loadManagedQuestions();
-        return;
-      }
+    const updates = rows.map((row, index) =>
+      supabaseClient.from("questions")
+        .update({ sort_order: index + 1 })
+        .eq("id", row.dataset.questionId)
+    );
+    const results = await Promise.all(updates);
+    const failed = results.find(result => result.error);
+    if (failed) {
+      setStatus("Could not save the new order: " + failed.error.message, true);
+      await loadManagedQuestions();
+      return;
     }
     setStatus("Question order saved.");
+    updateQuestionNumbers();
+  }
+
+  function updateQuestionNumbers() {
+    Array.from($("managedQuestions").children).forEach((row, index) => {
+      const number = row.querySelector(".question-number");
+      const area = row.querySelector("textarea");
+      number.textContent = "Question " + (index + 1);
+      area.setAttribute("aria-label", "Question " + (index + 1));
+      area.placeholder = "Question " + (index + 1);
+    });
+  }
+
+  async function deleteQuestion(question) {
+    const confirmed = confirm(
+      "Delete this question?\n\nThis permanently deletes the question and all student responses to it. This cannot be undone."
+    );
+    if (!confirmed) return;
+    setStatus("Deleting question and its student responses...");
+    const { error } = await supabaseClient.rpc("delete_teacher_question", { p_question_id: question.id });
+    if (error) {
+      setStatus("Could not delete question: " + error.message, true);
+      return;
+    }
     await loadManagedQuestions();
+    const rows = Array.from($("managedQuestions").querySelectorAll(".question-row"));
+    await saveQuestionOrder(rows);
+    setStatus("Question and its associated responses deleted. Remaining questions renumbered.");
   }
 
   async function loadManagedQuestions() {
@@ -569,95 +635,89 @@ Explain the purpose of a loop." required></textarea>
     data.forEach((question, index) => {
       const row = document.createElement("div");
       row.className = "question-row";
-      row.draggable = true;
       row.dataset.questionId = question.id;
 
       const handle = document.createElement("div");
       handle.className = "drag-handle";
       handle.textContent = "⠿";
-      handle.title = "Drag to reorder";
-      handle.setAttribute("aria-hidden", "true");
+      handle.title = "Drag this handle to reorder the question";
+      handle.setAttribute("aria-label", "Drag to reorder question " + (index + 1));
 
       const content = document.createElement("div");
+      const top = document.createElement("div");
+      top.className = "row-top";
       const number = document.createElement("strong");
       number.className = "question-number";
       number.textContent = "Question " + (index + 1);
+      top.appendChild(number);
       const text = document.createElement("textarea");
       text.value = question.question_text || "";
       text.maxLength = 5000;
       text.setAttribute("aria-label", "Question " + (index + 1));
       text.placeholder = "Question " + (index + 1);
-      content.append(number, text);
-
       const actions = document.createElement("div");
       actions.className = "row-actions";
-      const save = document.createElement("button");
-      save.className = "small-button";
-      save.type = "button";
-      save.textContent = "Save wording";
-      save.addEventListener("click", async () => {
-        const nextText = text.value.trim();
-        if (!nextText) { setStatus("Question text cannot be blank.", true); return; }
-        save.disabled = true;
-        const { error } = await supabaseClient.from("questions")
-          .update({ question_text: nextText }).eq("id", question.id);
-        save.disabled = false;
-        if (error) { setStatus("Could not save question: " + error.message, true); return; }
-        question.question_text = nextText;
-        setStatus("Question " + (index + 1) + " wording saved.");
-      });
       const remove = document.createElement("button");
-      remove.className = "small-button";
       remove.type = "button";
-      remove.textContent = "Delete";
-      remove.addEventListener("click", async () => {
-        if (!confirm("Delete question " + (index + 1) + "? Existing student responses may prevent deletion.")) return;
-        remove.disabled = true;
-        const { error } = await supabaseClient.from("questions").delete().eq("id", question.id);
-        remove.disabled = false;
-        if (error) { setStatus("Could not delete question: " + error.message, true); return; }
-        setStatus("Question deleted.");
-        await loadManagedQuestions();
-      });
-      actions.append(save, remove);
-      row.append(handle, content, actions);
+      remove.className = "small-button danger";
+      remove.textContent = "Delete question";
+      remove.addEventListener("click", () => deleteQuestion(question));
+      actions.appendChild(remove);
+      content.append(top, text, actions);
+      row.append(handle, content);
       box.appendChild(row);
 
-      row.addEventListener("dragstart", event => {
-        row.classList.add("dragging");
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", question.id);
+      // Save wording automatically after the teacher pauses typing, and when they leave the field.
+      let saveTimer = null;
+      let savedText = text.value;
+      let savingText = false;
+      let saveAgain = false;
+      const saveWording = async () => {
+        clearTimeout(saveTimer);
+        const nextText = text.value.trim();
+        if (!nextText) {
+          setStatus("Question " + (index + 1) + " cannot be blank.", true);
+          return;
+        }
+        if (nextText === savedText) return;
+        if (savingText) { saveAgain = true; return; }
+        savingText = true;
+        const { error: saveError } = await supabaseClient.from("questions")
+          .update({ question_text: nextText }).eq("id", question.id);
+        savingText = false;
+        if (saveError) {
+          setStatus("Could not save question wording: " + saveError.message, true);
+          return;
+        }
+        savedText = nextText;
+        question.question_text = nextText;
+        setStatus("Question wording saved automatically.");
+        if (saveAgain) { saveAgain = false; await saveWording(); }
+      };
+      text.addEventListener("input", () => {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(saveWording, 800);
       });
-      row.addEventListener("dragend", () => {
-        row.classList.remove("dragging");
-        box.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"));
-      });
-      row.addEventListener("dragover", event => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        row.classList.add("drag-over");
-      });
-      row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
-      row.addEventListener("drop", async event => {
-        event.preventDefault();
-        row.classList.remove("drag-over");
-        const draggedId = event.dataTransfer.getData("text/plain");
-        const dragged = Array.from(box.children).find(el => el.dataset.questionId === draggedId);
-        if (!dragged || dragged === row) return;
-        const rect = row.getBoundingClientRect();
-        const insertAfter = event.clientY > rect.top + rect.height / 2;
-        box.insertBefore(dragged, insertAfter ? row.nextSibling : row);
-        const orderedRows = Array.from(box.children);
-        orderedRows.forEach((el, i) => {
-          const label = el.querySelector(".question-number");
-          const area = el.querySelector("textarea");
-          label.textContent = "Question " + (i + 1);
-          area.setAttribute("aria-label", "Question " + (i + 1));
-          area.placeholder = "Question " + (i + 1);
-        });
-        await saveQuestionOrder(orderedRows);
-      });
+      text.addEventListener("blur", saveWording);
     });
+
+    // Use SortableJS so dragging works reliably from the visible handle, including touch screens.
+    if (box._sortable) box._sortable.destroy();
+    if (window.Sortable) {
+      box._sortable = Sortable.create(box, {
+        animation: 160,
+        handle: ".drag-handle",
+        draggable: ".question-row",
+        ghostClass: "sortable-ghost",
+        chosenClass: "sortable-chosen",
+        onEnd: async () => {
+          updateQuestionNumbers();
+          await saveQuestionOrder(Array.from(box.querySelectorAll(".question-row")));
+        }
+      });
+    } else {
+      setStatus("The drag-and-drop library did not load. Check your internet connection and reload.", true);
+    }
   }
 
   /* ---------- Questions ---------- */
