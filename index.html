@@ -195,33 +195,52 @@
   .key-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
   .key-value { overflow-wrap: anywhere; color: var(--yellow); font-family: ui-monospace, monospace; font-weight: 700; }
   .question-row {
-    display: grid; grid-template-columns: 42px 1fr; gap: 12px; align-items: center;
-    padding: 14px; margin: 12px 0; border: 2px solid var(--line);
-    border-radius: 14px; background: var(--dark); cursor: grab;
+    display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; align-items: center;
+    padding: 6px 9px; margin: 4px 0; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--dark); cursor: grab;
   }
   .question-row.dragging { opacity: .4; border-color: var(--cyan); }
   .question-row.drag-over { border-color: var(--yellow); background: var(--panel2); }
-  .question-row .drag-handle { color: var(--cyan); font-size: 1.8rem; text-align: center; cursor: grab; user-select: none; touch-action: none; font-weight: 800; }
+  .question-row .drag-handle { color: var(--cyan); font-size: 1.25rem; line-height: 1; text-align: center; cursor: grab; user-select: none; touch-action: none; font-weight: 800; }
   .question-row .drag-handle:active { cursor: grabbing; }
   .question-row.sortable-ghost { opacity: .25; border-color: var(--yellow); }
   .question-row.sortable-chosen { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(63,224,245,.15); }
   .question-row input, .question-row textarea {
-    width: 100%; padding: 10px 12px; border: 2px solid var(--line);
-    border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit;
+    box-sizing: border-box; width: 100%; padding: 6px 8px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--panel); color: var(--ink); font: inherit;
+    line-height: 1.25;
   }
-  .question-row textarea { min-height: 66px; resize: vertical; }
-  .question-row .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  .question-number { display: block; color: var(--yellow); margin-bottom: 6px; }
+  .question-row textarea { min-height: 42px; resize: vertical; }
+  .question-row .row-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+  .question-number { display: block; color: var(--yellow); margin: 0 0 3px; font-size: .85rem; }
   @media (max-width: 700px) { .question-row { grid-template-columns: 32px 1fr; } }
-  .small-button { padding: 9px 13px; font-size: .92rem; }
+  .small-button { padding: 4px 8px; font-size: .78rem; }
   button.danger { border-color: rgba(255,79,154,.55); color: #ff8ab9; background: rgba(255,79,154,.08); }
   button.danger:hover:not(:disabled) { border-color: var(--pink); background: rgba(255,79,154,.18); }
-  .question-row .row-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-  .question-row .row-actions { display:flex; justify-content:flex-end; margin-top:8px; }
+  /* Compact draggable question list: number, text and delete control share one row. */
+  .question-row > div:last-child {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .question-row .row-top { display: contents; }
+  .question-row .question-number { white-space: nowrap; margin: 0; }
+  .question-row textarea {
+    height: 36px;
+    min-height: 36px;
+    padding: 5px 7px;
+    resize: vertical;
+  }
+  .question-row .row-actions { display:flex; justify-content:flex-end; margin:0; }
   @media (max-width: 700px) {
     header.top { padding: 18px 20px; }
     main { padding: 28px 20px 70px; }
-    .question-row { grid-template-columns: 1fr; }
+    .question-row { grid-template-columns: 22px minmax(0, 1fr); gap: 5px; padding: 4px 6px; }
+    .question-row > div:last-child { grid-template-columns: auto minmax(0, 1fr) auto; gap: 5px; }
+    .question-row .question-number { font-size: .75rem; }
+    .question-row .small-button { padding: 3px 5px; font-size: .7rem; }
   }
 
   [hidden] { display: none !important; }
