@@ -1,345 +1,493 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Year 8 Teacher Dashboard</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 900px;
-      margin: 40px auto;
-      padding: 20px;
-      line-height: 1.5;
-      color: #222;
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Year 8 Teacher Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f3f5fb;
+    --surface: #ffffff;
+    --ink: #172033;
+    --muted: #64708a;
+    --line: #dde3f0;
+    --accent: #3b4cca;
+    --accent-soft: #e8ebfb;
+    --live: #1f9d6b;
+    --warn: #c4452d;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1424;
+      --surface: #182038;
+      --ink: #eef1fa;
+      --muted: #9aa5c2;
+      --line: #2a3452;
+      --accent: #8c9bff;
+      --accent-soft: #232d57;
+      --live: #3ed59a;
+      --warn: #ff8d77;
     }
-    input, button, select {
-      font: inherit;
-      padding: 10px;
-      margin: 5px 0;
-    }
-    button { cursor: pointer; }
-    .card {
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      padding: 15px;
-      margin: 12px 0;
-    }
-    .card button { margin-right: 8px; }
-    .response {
-      background: #f4f4f4;
-      border-radius: 8px;
-      padding: 15px;
-      margin: 12px 0;
-    }
-    #lessonArea, #questionArea, #responseArea {
-      display: none;
-    }
-    #status { color: #555; }
-    .muted { color: #666; }
-  </style>
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Outfit", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 40px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  header.top h1 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+  #userBar { display: none; align-items: center; gap: 14px; color: var(--muted); font-size: .95rem; }
+  main { max-width: 1500px; margin: 0 auto; padding: 32px 40px 80px; }
+  h2 { font-size: 1.9rem; font-weight: 600; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+
+  button, select, input { font: inherit; color: inherit; }
+  button {
+    cursor: pointer; border: 1px solid var(--line); background: var(--surface);
+    padding: 10px 18px; border-radius: 10px; font-weight: 500;
+    transition: background .15s, border-color .15s;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { button.primary { color: #0f1424; } }
+  button.link { border: none; background: none; padding: 0; color: var(--accent); margin-bottom: 16px; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  /* Login */
+  #login {
+    max-width: 400px; margin: 80px auto; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 32px;
+  }
+  #login h2 { font-size: 1.5rem; }
+  #login input {
+    width: 100%; padding: 12px 14px; margin: 6px 0 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+  }
+  #login button { width: 100%; margin-top: 6px; }
+
+  #status { color: var(--muted); min-height: 1.5em; margin-bottom: 18px; }
+  #status.error { color: var(--warn); }
+
+  /* Class and lesson cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 22px;
+    display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
+  }
+  .card h3 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+  .badge {
+    font-size: .85rem; padding: 3px 10px; border-radius: 99px;
+    background: var(--accent-soft); color: var(--accent); font-weight: 500;
+  }
+  .badge.off { background: var(--bg); color: var(--muted); }
+  .card .meta { color: var(--muted); font-size: .9rem; margin: 0; }
+
+  /* Question bar */
+  .qbar {
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 16px 20px; margin-bottom: 20px;
+  }
+  .qbar select {
+    flex: 1 1 420px; padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--bg); font-size: 1.05rem;
+  }
+  .live {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: var(--live); font-weight: 500; margin-left: auto;
+  }
+  .live::before {
+    content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--live);
+    animation: pulse 1.8s infinite;
+  }
+  .live.paused { color: var(--muted); }
+  .live.paused::before { background: var(--muted); animation: none; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { .live::before { animation: none; } }
+
+  /* Responses */
+  .rhead { display: flex; align-items: baseline; gap: 18px; margin: 28px 0 16px; }
+  .count { font-size: 3rem; font-weight: 700; line-height: 1; color: var(--accent); }
+  .count-label { color: var(--muted); font-size: 1.1rem; }
+  .rhead button { margin-left: auto; }
+  .responses { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
+  .response {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 6px solid var(--accent); border-radius: var(--radius);
+    padding: 22px 24px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .response.fresh { animation: arrive .5s ease-out; }
+  @keyframes arrive { from { transform: scale(.96); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .response.fresh { animation: none; } }
+  .who { display: flex; align-items: center; gap: 12px; }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 50%; flex: none;
+    display: grid; place-items: center; font-weight: 600; font-size: 1.05rem;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .name { font-weight: 600; font-size: 1.15rem; }
+  .time { color: var(--muted); font-size: .85rem; margin-left: auto; }
+  .answer {
+    margin: 0; font-family: "Newsreader", Georgia, serif;
+    font-size: 1.65rem; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .answer.empty { color: var(--muted); font-style: italic; font-size: 1.2rem; }
+  .empty-state {
+    grid-column: 1 / -1; text-align: center; padding: 60px 20px;
+    border: 2px dashed var(--line); border-radius: var(--radius);
+    color: var(--muted); font-size: 1.2rem;
+  }
+  .hidden-state {
+    text-align: center; padding: 60px 20px; border-radius: var(--radius);
+    background: var(--accent-soft); color: var(--accent); font-size: 1.3rem; font-weight: 500;
+  }
+  [hidden] { display: none !important; }
+</style>
 </head>
 <body>
 
+<header class="top">
   <h1>Year 8 Teacher Dashboard</h1>
+  <div id="userBar"><span id="userEmail"></span><button id="logoutButton">Log out</button></div>
+</header>
 
-  <div id="login">
+<main>
+  <form id="login" autocomplete="on">
     <h2>Teacher login</h2>
-    <input id="email" type="email" placeholder="Email">
-    <br>
-    <input id="password" type="password" placeholder="Password">
-    <br>
-    <button id="loginButton">Log in</button>
-  </div>
+    <input id="email" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button class="primary" type="submit">Log in</button>
+  </form>
 
   <p id="status">Please log in.</p>
 
-  <div id="classArea">
+  <section id="classArea" hidden>
     <h2>Your classes</h2>
-    <div id="classes"></div>
-  </div>
+    <p class="sub">Choose a class to see its lessons.</p>
+    <div id="classes" class="grid"></div>
+  </section>
 
-  <div id="lessonArea">
-    <hr>
-    <button id="backToClasses">← Back to classes</button>
+  <section id="lessonArea" hidden>
+    <button class="link" id="backToClasses">← Back to classes</button>
     <h2 id="classTitle"></h2>
-    <h3>Lessons</h3>
-    <div id="lessons"></div>
-  </div>
+    <p class="sub">Choose an active lesson.</p>
+    <div id="lessons" class="grid"></div>
+  </section>
 
-  <div id="questionArea">
-    <hr>
-    <button id="backToLessons">← Back to lessons</button>
+  <section id="questionArea" hidden>
+    <button class="link" id="backToLessons">← Back to lessons</button>
     <h2 id="lessonTitle"></h2>
-    <h3>Select a question</h3>
-    <select id="questionSelect">
-      <option value="">Choose a question</option>
-    </select>
-    <br>
-    <button id="collectButton">Collect responses</button>
-    <button id="revealButton" disabled>Reveal responses</button>
-  </div>
+    <div class="qbar">
+      <select id="questionSelect" aria-label="Question">
+        <option value="">Choose a question</option>
+      </select>
+      <button id="toggleButton" disabled>Hide responses</button>
+      <span id="liveIndicator" class="live paused" hidden>Live</span>
+    </div>
 
-  <div id="responseArea">
-    <hr>
-    <h2>Student responses</h2>
-    <p id="responseCount"></p>
-    <div id="responses"></div>
-  </div>
+    <div id="responseArea" hidden>
+      <div class="rhead">
+        <span class="count" id="countNumber">0</span>
+        <span class="count-label" id="countLabel">responses</span>
+      </div>
+      <div id="hiddenNotice" class="hidden-state" hidden>Responses are hidden. Students are still submitting.</div>
+      <div id="responses" class="responses"></div>
+    </div>
+  </section>
+</main>
 
-  <script>
-    const SUPABASE_URL = "https://agkixedmhuxskfdrfbcn.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_F6OHTBrA9vYWhWLUagmWvA_tojihS8U";
+<script>
+  const SUPABASE_URL = "https://agkixedmhuxskfdrfbcn.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_F6OHTBrA9vYWhWLUagmWvA_tojihS8U";
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const supabaseClient = window.supabase.createClient(
-      SUPABASE_URL,
-      SUPABASE_KEY
-    );
+  const POLL_MS = 3000;
+  const $ = id => document.getElementById(id);
+  const statusEl = $("status");
 
-    let currentClassId = null;
-    let currentSessionId = null;
-    let collectedResponses = [];
+  let currentClassId = null;
+  let currentSessionId = null;
+  let currentQuestionId = null;
+  let currentResponses = [];
+  let seenKeys = new Set();
+  let pollTimer = null;
+  let channel = null;
+  let revealed = true;
+  let lastSignature = "";
 
-    const status = document.getElementById("status");
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg;
+    statusEl.className = isError ? "error" : "";
+  }
 
-    document.getElementById("loginButton").addEventListener(
-      "click", async () => {
-        const email = document.getElementById("email").value;
-        const password = document.getElementById("password").value;
+  function show(areaId) {
+    ["classArea", "lessonArea", "questionArea"].forEach(id => { $(id).hidden = id !== areaId; });
+  }
 
-        const { error } = await supabaseClient.auth.signInWithPassword({
-          email,
-          password
-        });
+  /* ---------- Auth ---------- */
+  $("login").addEventListener("submit", async e => {
+    e.preventDefault();
+    const { error } = await supabaseClient.auth.signInWithPassword({
+      email: $("email").value,
+      password: $("password").value
+    });
+    if (error) { setStatus("Login failed: " + error.message, true); return; }
+    onLoggedIn();
+  });
 
-        if (error) {
-          status.textContent = "Login failed: " + error.message;
-          return;
-        }
+  $("logoutButton").addEventListener("click", async () => {
+    stopCollecting();
+    await supabaseClient.auth.signOut();
+    location.reload();
+  });
 
-        document.getElementById("login").style.display = "none";
-        status.textContent = "Logged in successfully.";
+  function onLoggedIn() {
+    $("login").hidden = true;
+    $("userBar").style.display = "flex";
+    supabaseClient.auth.getUser().then(({ data }) => {
+      $("userEmail").textContent = data && data.user ? data.user.email : "";
+    });
+    setStatus("");
+    loadClasses();
+  }
 
-        loadClasses();
-      }
-    );
+  supabaseClient.auth.getSession().then(({ data }) => {
+    if (data.session) onLoggedIn();
+  });
 
-    async function loadClasses() {
-      hideAllAreas();
-      document.getElementById("classArea").style.display = "block";
+  /* ---------- Classes ---------- */
+  async function loadClasses() {
+    stopCollecting();
+    show("classArea");
+    setStatus("Loading classes...");
+    const { data, error } = await supabaseClient.from("classes").select("id, name").order("name");
+    if (error) { setStatus("Could not load classes: " + error.message, true); return; }
+    setStatus("");
+    const box = $("classes");
+    box.innerHTML = "";
+    if (!data.length) { box.textContent = "No classes found."; return; }
+    data.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "card";
+      const h = document.createElement("h3");
+      h.textContent = item.name;
+      const b = document.createElement("button");
+      b.className = "primary";
+      b.textContent = "Open class";
+      b.addEventListener("click", () => { currentClassId = item.id; loadLessons(item.name); });
+      card.append(h, b);
+      box.appendChild(card);
+    });
+  }
 
-      status.textContent = "Loading classes...";
+  /* ---------- Lessons ---------- */
+  async function loadLessons(className) {
+    stopCollecting();
+    show("lessonArea");
+    $("classTitle").textContent = className;
+    $("lessons").textContent = "Loading lessons...";
+    const { data, error } = await supabaseClient
+      .from("sessions")
+      .select("id, worksheet_name, created_at, active")
+      .eq("class_id", currentClassId)
+      .order("created_at", { ascending: false });
+    if (error) { $("lessons").textContent = "Could not load lessons: " + error.message; return; }
+    const box = $("lessons");
+    box.innerHTML = "";
+    if (!data.length) { box.textContent = "No lessons found."; return; }
+    data.forEach(lesson => {
+      const card = document.createElement("div");
+      card.className = "card";
+      const badge = document.createElement("span");
+      badge.className = "badge" + (lesson.active ? "" : " off");
+      badge.textContent = lesson.active ? "Active" : "Inactive";
+      const h = document.createElement("h3");
+      h.textContent = lesson.worksheet_name;
+      const meta = document.createElement("p");
+      meta.className = "meta";
+      meta.textContent = new Date(lesson.created_at).toLocaleDateString(undefined,
+        { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+      const b = document.createElement("button");
+      b.className = "primary";
+      b.textContent = "Open lesson";
+      b.disabled = !lesson.active;
+      b.addEventListener("click", () => { currentSessionId = lesson.id; loadQuestions(lesson.worksheet_name); });
+      card.append(badge, h, meta, b);
+      box.appendChild(card);
+    });
+  }
 
-      const { data, error } = await supabaseClient
-        .from("classes")
-        .select("id, name")
-        .order("name");
+  /* ---------- Questions ---------- */
+  async function loadQuestions(lessonName) {
+    stopCollecting();
+    show("questionArea");
+    $("lessonTitle").textContent = lessonName;
+    $("responseArea").hidden = true;
+    $("liveIndicator").hidden = true;
+    $("toggleButton").disabled = true;
+    setStatus("Loading questions...");
+    const { data, error } = await supabaseClient
+      .from("questions")
+      .select("id, question_code, question_text")
+      .eq("session_id", currentSessionId)
+      .order("question_code");
+    if (error) { setStatus("Could not load questions: " + error.message, true); return; }
+    setStatus(data.length ? "" : "This lesson has no questions yet.");
+    const sel = $("questionSelect");
+    sel.innerHTML = '<option value="">Choose a question</option>';
+    data.forEach(q => {
+      const o = document.createElement("option");
+      o.value = q.id;
+      o.textContent = q.question_code + ": " + q.question_text;
+      sel.appendChild(o);
+    });
+  }
 
-      if (error) {
-        status.textContent = "Could not load classes: " + error.message;
-        return;
-      }
+  $("questionSelect").addEventListener("change", e => {
+    stopCollecting();
+    if (e.target.value) startCollecting(e.target.value);
+    else { $("responseArea").hidden = true; $("liveIndicator").hidden = true; $("toggleButton").disabled = true; }
+  });
 
-      status.textContent = "Classes retrieved: " + data.length;
+  /* ---------- Automatic collection ---------- */
+  function startCollecting(questionId) {
+    currentQuestionId = questionId;
+    currentResponses = [];
+    seenKeys = new Set();
+    lastSignature = "";
+    revealed = true;
+    $("toggleButton").textContent = "Hide responses";
+    $("toggleButton").disabled = false;
+    $("responseArea").hidden = false;
+    $("responses").innerHTML = "";
+    $("liveIndicator").hidden = false;
+    $("liveIndicator").className = "live";
+    $("liveIndicator").textContent = "Live";
+    applyReveal();
 
-      const container = document.getElementById("classes");
-      container.innerHTML = "";
+    fetchResponses();
+    pollTimer = setInterval(fetchResponses, POLL_MS);
 
-      data.forEach(item => {
-        const card = document.createElement("div");
-        card.className = "card";
+    // Realtime gives instant updates when enabled on the table; polling covers it otherwise.
+    channel = supabaseClient
+      .channel("responses-" + questionId)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "responses", filter: "question_id=eq." + questionId },
+        () => fetchResponses())
+      .subscribe();
+  }
 
-        const heading = document.createElement("h3");
-        heading.textContent = item.name;
+  function stopCollecting() {
+    clearInterval(pollTimer);
+    pollTimer = null;
+    if (channel) { supabaseClient.removeChannel(channel); channel = null; }
+    currentQuestionId = null;
+  }
 
-        const button = document.createElement("button");
-        button.textContent = "Open class";
-        button.addEventListener("click", () => {
-          currentClassId = item.id;
-          loadLessons(item.name);
-        });
+  async function fetchResponses() {
+    const qid = currentQuestionId;
+    if (!qid) return;
+    const { data, error } = await supabaseClient
+      .from("responses")
+      .select("student_id, student_name, answer, submitted_at")
+      .eq("session_id", currentSessionId)
+      .eq("question_id", qid)
+      .order("submitted_at");
+    if (qid !== currentQuestionId) return; // question changed while waiting
+    if (error) {
+      $("liveIndicator").className = "live paused";
+      $("liveIndicator").textContent = "Connection problem, retrying";
+      return;
+    }
+    $("liveIndicator").className = "live";
+    $("liveIndicator").textContent = "Live";
 
-        card.appendChild(heading);
-        card.appendChild(button);
-        container.appendChild(card);
-      });
+    // One card per student: keep their latest answer.
+    const latest = new Map();
+    data.forEach((r, i) => latest.set(r.student_id || ("row" + i), r));
+    currentResponses = [...latest.values()];
+
+    const signature = JSON.stringify(currentResponses);
+    if (signature === lastSignature) return;
+    lastSignature = signature;
+    render();
+  }
+
+  /* ---------- Display ---------- */
+  function applyReveal() {
+    $("responses").hidden = !revealed;
+    $("hiddenNotice").hidden = revealed;
+    $("toggleButton").textContent = revealed ? "Hide responses" : "Show responses";
+  }
+
+  $("toggleButton").addEventListener("click", () => { revealed = !revealed; applyReveal(); });
+
+  function render() {
+    const n = currentResponses.length;
+    $("countNumber").textContent = n;
+    $("countLabel").textContent = n === 1 ? "response" : "responses";
+
+    const box = $("responses");
+    box.innerHTML = "";
+    if (!n) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "Waiting for students to answer. Responses will appear here automatically.";
+      box.appendChild(empty);
+      return;
     }
 
-    async function loadLessons(className) {
-      hideAllAreas();
-      document.getElementById("lessonArea").style.display = "block";
-      document.getElementById("classTitle").textContent = className;
-      document.getElementById("lessons").textContent = "Loading lessons...";
+    currentResponses.forEach((r, i) => {
+      const key = r.student_id || ("row" + i);
+      const name = r.student_name || ("Student " + (i + 1));
 
-      status.textContent = "Loading lessons...";
+      const card = document.createElement("article");
+      card.className = "response";
+      if (!seenKeys.has(key) && seenKeys.size > 0) card.classList.add("fresh");
+      seenKeys.add(key);
 
-      const { data, error } = await supabaseClient
-        .from("sessions")
-        .select("id, worksheet_name, created_at, active")
-        .eq("class_id", currentClassId)
-        .order("created_at", { ascending: false });
+      const who = document.createElement("div");
+      who.className = "who";
+      const av = document.createElement("div");
+      av.className = "avatar";
+      av.textContent = name.trim().charAt(0).toUpperCase();
+      const nm = document.createElement("span");
+      nm.className = "name";
+      nm.textContent = name;
+      const tm = document.createElement("span");
+      tm.className = "time";
+      tm.textContent = r.submitted_at
+        ? new Date(r.submitted_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+      who.append(av, nm, tm);
 
-      if (error) {
-        document.getElementById("lessons").textContent =
-          "Could not load lessons: " + error.message;
-        return;
-      }
+      const ans = document.createElement("p");
+      ans.className = "answer" + (r.answer ? "" : " empty");
+      ans.textContent = r.answer || "No answer entered";
 
-      const container = document.getElementById("lessons");
-      container.innerHTML = "";
+      card.append(who, ans);
+      box.appendChild(card);
+    });
+  }
 
-      if (data.length === 0) {
-        container.textContent = "No lessons found.";
-        return;
-      }
-
-      data.forEach(lesson => {
-        const card = document.createElement("div");
-        card.className = "card";
-
-        const heading = document.createElement("h3");
-        heading.textContent = lesson.worksheet_name;
-
-        const state = document.createElement("p");
-        state.textContent = lesson.active ? "Active lesson" : "Inactive lesson";
-
-        const button = document.createElement("button");
-        button.textContent = "Open lesson";
-        button.disabled = !lesson.active;
-        button.addEventListener("click", () => {
-          currentSessionId = lesson.id;
-          loadQuestions(lesson.worksheet_name);
-        });
-
-        card.appendChild(heading);
-        card.appendChild(state);
-        card.appendChild(button);
-        container.appendChild(card);
-      });
-
-      status.textContent = "Lessons retrieved: " + data.length;
-    }
-
-    async function loadQuestions(lessonName) {
-      hideAllAreas();
-      document.getElementById("questionArea").style.display = "block";
-      document.getElementById("lessonTitle").textContent = lessonName;
-
-      status.textContent = "Loading questions...";
-
-      const { data, error } = await supabaseClient
-        .from("questions")
-        .select("id, question_code, question_text")
-        .eq("session_id", currentSessionId)
-        .order("question_code");
-
-      if (error) {
-        status.textContent = "Could not load questions: " + error.message;
-        return;
-      }
-
-      const select = document.getElementById("questionSelect");
-      select.innerHTML = '<option value="">Choose a question</option>';
-
-      data.forEach(question => {
-        const option = document.createElement("option");
-        option.value = question.id;
-        option.textContent =
-          question.question_code + ": " + question.question_text;
-        select.appendChild(option);
-      });
-
-      status.textContent = "Questions retrieved: " + data.length;
-    }
-
-    document.getElementById("collectButton").addEventListener(
-      "click", async () => {
-        const questionId =
-          document.getElementById("questionSelect").value;
-
-        if (!questionId) {
-          status.textContent = "Please select a question first.";
-          return;
-        }
-
-        status.textContent = "Collecting responses...";
-
-        document.getElementById("responseArea").style.display = "none";
-        document.getElementById("revealButton").disabled = true;
-        collectedResponses = [];
-
-        const { data, error } = await supabaseClient
-          .from("responses")
-          .select("student_id, student_name, answer, submitted_at")
-          .eq("session_id", currentSessionId)
-          .eq("question_id", questionId)
-          .order("submitted_at");
-
-        if (error) {
-          status.textContent =
-            "Could not collect responses: " + error.message;
-          return;
-        }
-
-        collectedResponses = data;
-
-        status.textContent =
-          "Collected " + data.length + " responses. Ready to reveal.";
-
-        document.getElementById("responseCount").textContent =
-          data.length + " student response(s) collected.";
-
-        document.getElementById("revealButton").disabled = false;
-      }
-    );
-
-    document.getElementById("revealButton").addEventListener(
-      "click", () => {
-        const container = document.getElementById("responses");
-        container.innerHTML = "";
-
-        if (collectedResponses.length === 0) {
-          container.textContent = "No responses have been submitted yet.";
-        }
-
-        collectedResponses.forEach((response, index) => {
-          const card = document.createElement("div");
-          card.className = "response";
-
-          const heading = document.createElement("strong");
-          heading.textContent = response.student_name || ("Student " + (index + 1));
-
-          const answer = document.createElement("p");
-          answer.textContent = response.answer || "(No answer entered)";
-
-          card.appendChild(heading);
-          card.appendChild(answer);
-          container.appendChild(card);
-        });
-
-        document.getElementById("responseArea").style.display = "block";
-        status.textContent = "Responses revealed.";
-      }
-    );
-
-    document.getElementById("backToClasses").addEventListener(
-      "click", loadClasses
-    );
-
-    document.getElementById("backToLessons").addEventListener(
-      "click", () => loadLessons(
-        document.getElementById("classTitle").textContent
-      )
-    );
-
-    function hideAllAreas() {
-      document.getElementById("classArea").style.display = "none";
-      document.getElementById("lessonArea").style.display = "none";
-      document.getElementById("questionArea").style.display = "none";
-      document.getElementById("responseArea").style.display = "none";
-    }
-  </script>
+  /* ---------- Navigation ---------- */
+  $("backToClasses").addEventListener("click", loadClasses);
+  $("backToLessons").addEventListener("click", () => loadLessons($("classTitle").textContent));
+</script>
 </body>
 </html>
