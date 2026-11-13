@@ -460,7 +460,7 @@ Explain the purpose of a loop." required></textarea>
     );
     if (!confirmed) return;
     setStatus("Deleting lesson and its student responses...");
-    const { error } = await supabaseClient.rpc("delete_teacher_lesson", { p_session_id: lesson.id });
+    const { error } = await supabaseClient.rpc("delete_lesson", { p_session_id: lesson.id });
     if (error) {
       setStatus("Could not delete lesson: " + error.message, true);
       return;
@@ -607,7 +607,7 @@ Explain the purpose of a loop." required></textarea>
     );
     if (!confirmed) return;
     setStatus("Deleting question and its student responses...");
-    const { error } = await supabaseClient.rpc("delete_teacher_question", { p_question_id: question.id });
+    const { error } = await supabaseClient.rpc("delete_question", { p_question_id: question.id });
     if (error) {
       setStatus("Could not delete question: " + error.message, true);
       return;
