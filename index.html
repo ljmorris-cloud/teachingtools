@@ -194,15 +194,21 @@
   .key-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
   .key-value { overflow-wrap: anywhere; color: var(--yellow); font-family: ui-monospace, monospace; font-weight: 700; }
   .question-row {
-    display: grid; grid-template-columns: minmax(110px, .25fr) minmax(220px, 1fr) auto;
-    gap: 12px; align-items: start; padding: 14px 0; border-top: 1px solid var(--line);
+    display: grid; grid-template-columns: 42px 1fr auto; gap: 12px; align-items: center;
+    padding: 14px; margin: 12px 0; border: 2px solid var(--line);
+    border-radius: 14px; background: var(--dark); cursor: grab;
   }
+  .question-row.dragging { opacity: .4; border-color: var(--cyan); }
+  .question-row.drag-over { border-color: var(--yellow); background: var(--panel2); }
+  .question-row .drag-handle { color: var(--muted); font-size: 1.5rem; text-align: center; cursor: grab; user-select: none; }
   .question-row input, .question-row textarea {
     width: 100%; padding: 10px 12px; border: 2px solid var(--line);
-    border-radius: 10px; background: var(--dark); color: var(--ink); font: inherit;
+    border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit;
   }
   .question-row textarea { min-height: 66px; resize: vertical; }
   .question-row .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .question-number { display: block; color: var(--yellow); margin-bottom: 6px; }
+  @media (max-width: 700px) { .question-row { grid-template-columns: 32px 1fr; } .question-row .row-actions { grid-column: 2; } }
   .small-button { padding: 9px 13px; font-size: .92rem; }
   @media (max-width: 700px) {
     header.top { padding: 18px 20px; }
@@ -263,8 +269,8 @@ What is a variable?
 Explain the purpose of a loop." required></textarea>
         <div class="manage-actions"><button class="primary" type="submit">Add question list</button></div>
       </form>
-      <h3 style="margin-top:28px">Existing questions</h3>
-      <p>Questions are numbered automatically. You can edit the wording or delete a question.</p>
+      <h3 style="margin-top:28px">Questions in this lesson</h3>
+      <p>Questions are saved automatically when added. Drag the boxes to change their order; the numbers update automatically.</p>
       <div id="managedQuestions"></div>
     </section>
   </section>
@@ -485,7 +491,6 @@ Explain the purpose of a loop." required></textarea>
   $("bulkQuestionForm").addEventListener("submit", async e => {
     e.preventDefault();
     if (!managedLesson) return;
-    // Accept a pasted list. Question codes are generated automatically.
     const questions = $("bulkQuestionText").value
       .split(/\r?\n/)
       .map(line => line.trim())
@@ -496,11 +501,11 @@ Explain the purpose of a loop." required></textarea>
 
     const button = e.submitter;
     if (button) button.disabled = true;
-    setStatus("Adding " + questions.length + " questions...");
+    setStatus("Saving " + questions.length + " questions...");
 
     const { data: existing, error: checkError } = await supabaseClient
       .from("questions")
-      .select("question_code")
+      .select("question_code, sort_order")
       .eq("session_id", managedLesson.id);
     if (checkError) {
       if (button) button.disabled = false;
@@ -508,14 +513,16 @@ Explain the purpose of a loop." required></textarea>
       return;
     }
 
-    // New questions use simple numeric codes: 1, 2, 3 ...
+    // question_code remains a stable internal worksheet lookup; sort_order controls display order.
     const usedNumbers = (existing || [])
       .map(q => Number(q.question_code))
       .filter(n => Number.isInteger(n) && n > 0);
-    let nextNumber = usedNumbers.length ? Math.max(...usedNumbers) + 1 : 1;
-    const rows = questions.map(questionText => ({
+    let nextCode = usedNumbers.length ? Math.max(...usedNumbers) + 1 : 1;
+    const nextOrder = (existing || []).reduce((max, q) => Math.max(max, Number(q.sort_order) || 0), 0) + 1;
+    const rows = questions.map((questionText, index) => ({
       session_id: managedLesson.id,
-      question_code: String(nextNumber++),
+      question_code: String(nextCode++),
+      sort_order: nextOrder + index,
       question_text: questionText
     }));
 
@@ -526,42 +533,68 @@ Explain the purpose of a loop." required></textarea>
       return;
     }
     $("bulkQuestionText").value = "";
-    setStatus(questions.length + " questions added.");
+    setStatus(questions.length + " questions saved.");
     await loadManagedQuestions();
   });
+
+  async function saveQuestionOrder(rows) {
+    setStatus("Saving question order...");
+    for (let index = 0; index < rows.length; index++) {
+      const { error } = await supabaseClient.from("questions")
+        .update({ sort_order: index + 1 }).eq("id", rows[index].dataset.questionId);
+      if (error) {
+        setStatus("Could not save the new order: " + error.message, true);
+        await loadManagedQuestions();
+        return;
+      }
+    }
+    setStatus("Question order saved.");
+    await loadManagedQuestions();
+  }
 
   async function loadManagedQuestions() {
     if (!managedLesson) return;
     const { data, error } = await supabaseClient
       .from("questions")
-      .select("id, question_code, question_text")
+      .select("id, question_code, question_text, sort_order")
       .eq("session_id", managedLesson.id);
     const box = $("managedQuestions");
     box.innerHTML = "";
     if (error) { box.textContent = "Could not load questions: " + error.message; return; }
     if (!data.length) { box.textContent = "No questions have been added yet."; return; }
 
-    data.sort((a, b) => {
-      const an = Number(a.question_code), bn = Number(b.question_code);
-      if (Number.isInteger(an) && Number.isInteger(bn)) return an - bn;
-      return String(a.question_code).localeCompare(String(b.question_code));
-    });
+    data.sort((a, b) => (Number(a.sort_order) || 999999) - (Number(b.sort_order) || 999999)
+      || String(a.question_code).localeCompare(String(b.question_code), undefined, { numeric: true }));
 
     data.forEach((question, index) => {
       const row = document.createElement("div");
       row.className = "question-row";
-      row.style.gridTemplateColumns = "minmax(0, 1fr) auto";
+      row.draggable = true;
+      row.dataset.questionId = question.id;
+
+      const handle = document.createElement("div");
+      handle.className = "drag-handle";
+      handle.textContent = "⠿";
+      handle.title = "Drag to reorder";
+      handle.setAttribute("aria-hidden", "true");
+
+      const content = document.createElement("div");
+      const number = document.createElement("strong");
+      number.className = "question-number";
+      number.textContent = "Question " + (index + 1);
       const text = document.createElement("textarea");
       text.value = question.question_text || "";
       text.maxLength = 5000;
-      const displayNumber = /^\d+$/.test(String(question.question_code)) ? question.question_code : String(index + 1);
-      text.setAttribute("aria-label", "Question " + displayNumber);
-      text.placeholder = "Question " + displayNumber;
+      text.setAttribute("aria-label", "Question " + (index + 1));
+      text.placeholder = "Question " + (index + 1);
+      content.append(number, text);
+
       const actions = document.createElement("div");
       actions.className = "row-actions";
       const save = document.createElement("button");
       save.className = "small-button";
-      save.textContent = "Save";
+      save.type = "button";
+      save.textContent = "Save wording";
       save.addEventListener("click", async () => {
         const nextText = text.value.trim();
         if (!nextText) { setStatus("Question text cannot be blank.", true); return; }
@@ -571,13 +604,14 @@ Explain the purpose of a loop." required></textarea>
         save.disabled = false;
         if (error) { setStatus("Could not save question: " + error.message, true); return; }
         question.question_text = nextText;
-        setStatus("Question " + displayNumber + " saved.");
+        setStatus("Question " + (index + 1) + " wording saved.");
       });
       const remove = document.createElement("button");
       remove.className = "small-button";
+      remove.type = "button";
       remove.textContent = "Delete";
       remove.addEventListener("click", async () => {
-        if (!confirm("Delete question " + displayNumber + "? Existing student responses may prevent deletion.")) return;
+        if (!confirm("Delete question " + (index + 1) + "? Existing student responses may prevent deletion.")) return;
         remove.disabled = true;
         const { error } = await supabaseClient.from("questions").delete().eq("id", question.id);
         remove.disabled = false;
@@ -586,13 +620,43 @@ Explain the purpose of a loop." required></textarea>
         await loadManagedQuestions();
       });
       actions.append(save, remove);
-      const number = document.createElement("strong");
-      number.textContent = "Question " + displayNumber;
-      number.style.color = "var(--yellow)";
-      const wrap = document.createElement("div");
-      wrap.append(number, text);
-      row.append(wrap, actions);
+      row.append(handle, content, actions);
       box.appendChild(row);
+
+      row.addEventListener("dragstart", event => {
+        row.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", question.id);
+      });
+      row.addEventListener("dragend", () => {
+        row.classList.remove("dragging");
+        box.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"));
+      });
+      row.addEventListener("dragover", event => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        row.classList.add("drag-over");
+      });
+      row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+      row.addEventListener("drop", async event => {
+        event.preventDefault();
+        row.classList.remove("drag-over");
+        const draggedId = event.dataTransfer.getData("text/plain");
+        const dragged = Array.from(box.children).find(el => el.dataset.questionId === draggedId);
+        if (!dragged || dragged === row) return;
+        const rect = row.getBoundingClientRect();
+        const insertAfter = event.clientY > rect.top + rect.height / 2;
+        box.insertBefore(dragged, insertAfter ? row.nextSibling : row);
+        const orderedRows = Array.from(box.children);
+        orderedRows.forEach((el, i) => {
+          const label = el.querySelector(".question-number");
+          const area = el.querySelector("textarea");
+          label.textContent = "Question " + (i + 1);
+          area.setAttribute("aria-label", "Question " + (i + 1));
+          area.placeholder = "Question " + (i + 1);
+        });
+        await saveQuestionOrder(orderedRows);
+      });
     });
   }
 
@@ -607,20 +671,21 @@ Explain the purpose of a loop." required></textarea>
     setStatus("Loading questions...");
     const { data, error } = await supabaseClient
       .from("questions")
-      .select("id, question_code, question_text")
+      .select("id, question_code, question_text, sort_order")
       .eq("session_id", currentSessionId)
-      .order("question_code");
+      .order("sort_order", { ascending: true, nullsFirst: false });
     if (error) { setStatus("Could not load questions: " + error.message, true); return; }
     setStatus(data.length ? "" : "This lesson has no questions yet.");
     const sel = $("questionSelect");
     sel.innerHTML = '<option value="">Choose a question</option>';
     const numericCodes = data.every(q => /^\d+$/.test(String(q.question_code)));
     if (numericCodes) {
-      data.sort((a, b) => Number(a.question_code) - Number(b.question_code));
-      data.forEach(q => {
+      data.sort((a, b) => (Number(a.sort_order) || 999999) - (Number(b.sort_order) || 999999)
+        || Number(a.question_code) - Number(b.question_code));
+      data.forEach((q, index) => {
         const option = document.createElement("option");
         option.value = q.id;
-        option.textContent = "Question " + q.question_code + "   " + q.question_text;
+        option.textContent = "Question " + (index + 1) + "   " + q.question_text;
         sel.appendChild(option);
       });
     } else {
