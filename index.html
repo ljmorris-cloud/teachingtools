@@ -112,6 +112,40 @@
   }
   .badge.off { background: var(--panel2); color: var(--muted); }
   .card .meta { color: var(--muted); margin: 0; }
+  
+ .lesson-setting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--dark);
+  font-size: .95rem;
+}
+
+.lesson-setting input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--lime);
+  cursor: pointer;
+}
+
+.lesson-setting span {
+  flex: 1;
+}
+
+.lesson-setting small {
+  display: block;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.lesson-setting.saving {
+  opacity: .5;
+  pointer-events: none;
+}
 
   .qbar {
     display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
@@ -328,42 +362,115 @@
     });
   }
 
+
   /* ---------- Lessons ---------- */
   async function loadLessons(className) {
     stopCollecting();
     show("lessonArea");
     $("classTitle").textContent = className;
     $("lessons").textContent = "Loading lessons...";
+
     const { data, error } = await supabaseClient
       .from("sessions")
-      .select("id, worksheet_name, created_at, active")
+      .select("id, worksheet_name, created_at, active, student_view_enabled")
       .eq("class_id", currentClassId)
       .order("created_at", { ascending: false });
-    if (error) { $("lessons").textContent = "Could not load lessons: " + error.message; return; }
+
+    if (error) {
+      $("lessons").textContent = "Could not load lessons: " + error.message;
+      return;
+    }
+
     const box = $("lessons");
     box.innerHTML = "";
-    if (!data.length) { box.textContent = "No lessons found."; return; }
+
+    if (!data.length) {
+      box.textContent = "No lessons found.";
+      return;
+    }
+
     data.forEach(lesson => {
       const card = document.createElement("div");
       card.className = "card";
+
       const badge = document.createElement("span");
       badge.className = "badge" + (lesson.active ? "" : " off");
       badge.textContent = lesson.active ? "Active" : "Inactive";
+
       const h = document.createElement("h3");
       h.textContent = lesson.worksheet_name;
+
       const meta = document.createElement("p");
       meta.className = "meta";
-      meta.textContent = new Date(lesson.created_at).toLocaleDateString(undefined,
-        { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+      meta.textContent = new Date(lesson.created_at).toLocaleDateString(undefined, {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric"
+      });
+
+      // Student viewing control
+      const setting = document.createElement("label");
+      setting.className = "lesson-setting";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = lesson.student_view_enabled ?? true;
+
+      const settingText = document.createElement("span");
+      settingText.textContent = "Allow student viewing";
+
+      const settingStatus = document.createElement("small");
+      settingStatus.textContent = checkbox.checked
+        ? "Students can view previous responses"
+        : "Student viewing is disabled";
+
+      settingText.appendChild(settingStatus);
+      setting.append(checkbox, settingText);
+
+      checkbox.addEventListener("change", async () => {
+        const newValue = checkbox.checked;
+
+        checkbox.disabled = true;
+        setting.classList.add("saving");
+        settingStatus.textContent = "Saving...";
+
+        const { data: updated, error: updateError } = await supabaseClient
+          .from("sessions")
+          .update({ student_view_enabled: newValue })
+          .eq("id", lesson.id)
+          .select("id")
+          .maybeSingle();
+
+        if (updateError || !updated) {
+          checkbox.checked = !newValue;
+          settingStatus.textContent = "Could not save. Check permissions.";
+          console.error("Viewing setting update failed:", updateError);
+        } else {
+          settingStatus.textContent = newValue
+            ? "Students can view previous responses"
+            : "Student viewing is disabled";
+        }
+
+        checkbox.disabled = false;
+        setting.classList.remove("saving");
+      });
+
       const b = document.createElement("button");
       b.className = "primary";
       b.textContent = "Open lesson";
       b.disabled = !lesson.active;
-      b.addEventListener("click", () => { currentSessionId = lesson.id; loadQuestions(lesson.worksheet_name); });
-      card.append(badge, h, meta, b);
+
+      b.addEventListener("click", () => {
+        currentSessionId = lesson.id;
+        loadQuestions(lesson.worksheet_name);
+      });
+
+      card.append(badge, h, meta, setting, b);
       box.appendChild(card);
     });
   }
+
 
   /* ---------- Questions ---------- */
   async function loadQuestions(lessonName) {
