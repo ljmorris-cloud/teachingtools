@@ -176,6 +176,40 @@
     background: linear-gradient(135deg, var(--violet), var(--pink));
     color: var(--dark); font-size: 2rem; font-weight: 800;
   }
+
+  .manage-panel {
+    background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius);
+    padding: 24px; margin: 24px 0;
+  }
+  .manage-panel h3 { margin: 0 0 14px; font-size: 1.55rem; }
+  .manage-panel p { color: var(--muted); }
+  .manage-form { display: grid; gap: 12px; max-width: 850px; }
+  .manage-form input, .manage-form textarea {
+    width: 100%; padding: 13px 15px; border: 2px solid var(--line);
+    border-radius: 12px; background: var(--dark); color: var(--ink); font: inherit;
+  }
+  .manage-form textarea { min-height: 105px; resize: vertical; }
+  .manage-form input:focus, .manage-form textarea:focus { outline: none; border-color: var(--cyan); }
+  .manage-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .key-line { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
+  .key-value { overflow-wrap: anywhere; color: var(--yellow); font-family: ui-monospace, monospace; font-weight: 700; }
+  .question-row {
+    display: grid; grid-template-columns: minmax(110px, .25fr) minmax(220px, 1fr) auto;
+    gap: 12px; align-items: start; padding: 14px 0; border-top: 1px solid var(--line);
+  }
+  .question-row input, .question-row textarea {
+    width: 100%; padding: 10px 12px; border: 2px solid var(--line);
+    border-radius: 10px; background: var(--dark); color: var(--ink); font: inherit;
+  }
+  .question-row textarea { min-height: 66px; resize: vertical; }
+  .question-row .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .small-button { padding: 9px 13px; font-size: .92rem; }
+  @media (max-width: 700px) {
+    header.top { padding: 18px 20px; }
+    main { padding: 28px 20px 70px; }
+    .question-row { grid-template-columns: 1fr; }
+  }
+
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -205,8 +239,30 @@
   <section id="lessonArea" hidden>
     <button class="link" id="backToClasses">← Back to classes</button>
     <h2 id="classTitle"></h2>
-    <p class="sub">Choose an active lesson.</p>
+    <p class="sub">Create lessons, manage questions or open a lesson to view student responses.</p>
+    <div class="manage-panel">
+      <h3>＋ Create a new lesson</h3>
+      <form id="createLessonForm" class="manage-form">
+        <input id="newLessonName" type="text" maxlength="150" placeholder="Lesson / worksheet name" required>
+        <div class="manage-actions"><button class="primary" type="submit">Create lesson</button></div>
+      </form>
+    </div>
     <div id="lessons" class="grid"></div>
+    <section id="questionManager" class="manage-panel" hidden>
+      <button class="link" id="closeQuestionManager">← Back to lessons</button>
+      <h3 id="manageLessonTitle">Manage lesson</h3>
+      <p>Use this access key in the worksheet's <code>ACCESS_TOKEN</code> constant.</p>
+      <div class="key-line"><span class="key-value" id="lessonAccessKey"></span><button class="small-button" id="copyAccessKey" type="button">Copy key</button></div>
+      <h3>Add a question</h3>
+      <form id="addQuestionForm" class="manage-form">
+        <input id="newQuestionCode" type="text" maxlength="40" placeholder="Question code (e.g. q1 or 1t1)" required>
+        <textarea id="newQuestionText" maxlength="5000" placeholder="Question text" required></textarea>
+        <div class="manage-actions"><button class="primary" type="submit">Add question</button></div>
+      </form>
+      <h3 style="margin-top:28px">Existing questions</h3>
+      <p>Question codes must match the codes used by your worksheet. Questions are displayed in question-code order.</p>
+      <div id="managedQuestions"></div>
+    </section>
   </section>
 
   <section id="questionArea" hidden>
@@ -306,6 +362,8 @@
   /* ---------- Classes ---------- */
   async function loadClasses() {
     stopCollecting();
+    $("questionManager").hidden = true;
+    managedLesson = null;
     show("classArea");
     setStatus("Loading classes...");
     const { data, error } = await supabaseClient.from("classes").select("id, name").order("name");
@@ -331,18 +389,20 @@
   /* ---------- Lessons ---------- */
   async function loadLessons(className) {
     stopCollecting();
+    $("questionManager").hidden = true;
+    managedLesson = null;
     show("lessonArea");
     $("classTitle").textContent = className;
     $("lessons").textContent = "Loading lessons...";
     const { data, error } = await supabaseClient
       .from("sessions")
-      .select("id, worksheet_name, created_at, active")
+      .select("id, worksheet_name, created_at, active, access_token")
       .eq("class_id", currentClassId)
       .order("created_at", { ascending: false });
     if (error) { $("lessons").textContent = "Could not load lessons: " + error.message; return; }
     const box = $("lessons");
     box.innerHTML = "";
-    if (!data.length) { box.textContent = "No lessons found."; return; }
+    if (!data.length) { box.textContent = "No lessons found yet. Create your first lesson above."; return; }
     data.forEach(lesson => {
       const card = document.createElement("div");
       card.className = "card";
@@ -355,13 +415,163 @@
       meta.className = "meta";
       meta.textContent = new Date(lesson.created_at).toLocaleDateString(undefined,
         { weekday: "short", day: "numeric", month: "short", year: "numeric" });
-      const b = document.createElement("button");
-      b.className = "primary";
-      b.textContent = "Open lesson";
-      b.disabled = !lesson.active;
-      b.addEventListener("click", () => { currentSessionId = lesson.id; loadQuestions(lesson.worksheet_name); });
-      card.append(badge, h, meta, b);
+      const open = document.createElement("button");
+      open.className = "primary";
+      open.textContent = "Open lesson responses";
+      open.disabled = !lesson.active;
+      open.addEventListener("click", () => { currentSessionId = lesson.id; loadQuestions(lesson.worksheet_name); });
+      const manage = document.createElement("button");
+      manage.textContent = "Manage questions / access key";
+      manage.addEventListener("click", () => openQuestionManager(lesson));
+      card.append(badge, h, meta, open, manage);
       box.appendChild(card);
+    });
+  }
+
+  /* ---------- Create and manage lessons ---------- */
+  let managedLesson = null;
+
+  $("createLessonForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const name = $("newLessonName").value.trim();
+    if (!name || !currentClassId) return;
+    const submit = e.submitter;
+    if (submit) submit.disabled = true;
+    setStatus("Creating lesson...");
+    const { data, error } = await supabaseClient
+      .from("sessions")
+      .insert({ class_id: currentClassId, worksheet_name: name })
+      .select("id, access_token")
+      .single();
+    if (submit) submit.disabled = false;
+    if (error) { setStatus("Could not create lesson: " + error.message, true); return; }
+    $("newLessonName").value = "";
+    setStatus("Lesson created. Its access key has been generated.");
+    await loadLessons($("classTitle").textContent);
+    const lesson = { id: data.id, access_token: data.access_token, worksheet_name: name };
+    openQuestionManager(lesson);
+  });
+
+  async function openQuestionManager(lesson) {
+    stopCollecting();
+    managedLesson = lesson;
+    $("questionManager").hidden = false;
+    $("manageLessonTitle").textContent = lesson.worksheet_name;
+    $("lessonAccessKey").textContent = lesson.access_token || "Access key unavailable";
+    $("managedQuestions").textContent = "Loading questions...";
+    await loadManagedQuestions();
+    $("questionManager").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  $("closeQuestionManager").addEventListener("click", () => {
+    $("questionManager").hidden = true;
+    managedLesson = null;
+  });
+
+  $("copyAccessKey").addEventListener("click", async () => {
+    if (!managedLesson || !managedLesson.access_token) return;
+    try {
+      await navigator.clipboard.writeText(managedLesson.access_token);
+      setStatus("Access key copied.");
+    } catch (err) {
+      setStatus("Could not copy automatically. Select and copy the key shown above.", true);
+    }
+  });
+
+  $("addQuestionForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    if (!managedLesson) return;
+    const code = $("newQuestionCode").value.trim();
+    const questionText = $("newQuestionText").value.trim();
+    if (!code || !questionText) return;
+    const button = e.submitter;
+    if (button) button.disabled = true;
+    const { data: existing, error: checkError } = await supabaseClient
+      .from("questions").select("id").eq("session_id", managedLesson.id).eq("question_code", code);
+    if (checkError) {
+      if (button) button.disabled = false;
+      setStatus("Could not check question code: " + checkError.message, true);
+      return;
+    }
+    if (existing.length) {
+      if (button) button.disabled = false;
+      setStatus("That question code is already used in this lesson.", true);
+      return;
+    }
+    const { error } = await supabaseClient.from("questions").insert({
+      session_id: managedLesson.id, question_code: code, question_text: questionText
+    });
+    if (button) button.disabled = false;
+    if (error) { setStatus("Could not add question: " + error.message, true); return; }
+    $("newQuestionCode").value = "";
+    $("newQuestionText").value = "";
+    setStatus("Question added.");
+    await loadManagedQuestions();
+  });
+
+  async function loadManagedQuestions() {
+    if (!managedLesson) return;
+    const { data, error } = await supabaseClient
+      .from("questions")
+      .select("id, question_code, question_text")
+      .eq("session_id", managedLesson.id)
+      .order("question_code", { ascending: true });
+    const box = $("managedQuestions");
+    box.innerHTML = "";
+    if (error) { box.textContent = "Could not load questions: " + error.message; return; }
+    if (!data.length) { box.textContent = "No questions have been added yet."; return; }
+
+    data.forEach(question => {
+      const row = document.createElement("div");
+      row.className = "question-row";
+      const code = document.createElement("input");
+      code.value = question.question_code;
+      code.maxLength = 40;
+      code.setAttribute("aria-label", "Question code");
+      const text = document.createElement("textarea");
+      text.value = question.question_text || "";
+      text.maxLength = 5000;
+      text.setAttribute("aria-label", "Question text");
+      const actions = document.createElement("div");
+      actions.className = "row-actions";
+      const save = document.createElement("button");
+      save.className = "small-button";
+      save.textContent = "Save";
+      save.addEventListener("click", async () => {
+        const nextCode = code.value.trim();
+        const nextText = text.value.trim();
+        if (!nextCode || !nextText) { setStatus("Question code and text cannot be blank.", true); return; }
+        const { data: duplicate, error: duplicateError } = await supabaseClient
+          .from("questions").select("id").eq("session_id", managedLesson.id)
+          .eq("question_code", nextCode).neq("id", question.id);
+        if (duplicateError) { setStatus("Could not check question code: " + duplicateError.message, true); return; }
+        if (duplicate.length) { setStatus("That question code is already used in this lesson.", true); return; }
+        save.disabled = true;
+        const { error } = await supabaseClient.from("questions").update({
+          question_code: nextCode, question_text: nextText
+        }).eq("id", question.id);
+        save.disabled = false;
+        if (error) { setStatus("Could not save question: " + error.message, true); return; }
+        question.question_code = nextCode;
+        question.question_text = nextText;
+        setStatus("Question saved.");
+        await loadManagedQuestions();
+      });
+      const remove = document.createElement("button");
+      remove.className = "small-button";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        if (!confirm("Delete this question? Its associated student responses may also prevent deletion.")) return;
+        remove.disabled = true;
+        const { error } = await supabaseClient.from("questions").delete().eq("id", question.id);
+        remove.disabled = false;
+        if (error) { setStatus("Could not delete question: " + error.message, true); return; }
+        setStatus("Question deleted.");
+        await loadManagedQuestions();
+      });
+      actions.append(save, remove);
+      row.append(code, text, actions);
+      box.appendChild(row);
     });
   }
 
