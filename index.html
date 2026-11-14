@@ -376,7 +376,19 @@
       <div class="key-line"><span class="key-value" id="lessonAccessKey"></span><button class="small-button" id="copyAccessKey" type="button">Copy key</button></div>
       <h3>Sync WE DO questions from the worksheet</h3>
       <p>The worksheet is the only place WE DO questions are written. Choose the worksheet file and this lesson's questions are brought into line with it. You will see what will be added, kept and removed before anything changes. Re-sync any time you edit the worksheet's questions.</p>
-      <div class="manage-actions" style="margin-bottom:10px"><button class="primary" type="button" id="importWorksheetBtn">Sync questions from worksheet…</button><input type="file" id="importWorksheetFile" accept=".html,.htm,text/html" hidden></div>
+      <div class="manage-form" style="margin-bottom:10px">
+        <input id="worksheetUrl" type="url" placeholder="Worksheet web address, e.g. https://your-project.vercel.app/rgb.html" autocomplete="off">
+        <div class="manage-actions"><button class="primary" type="button" id="syncUrlBtn">Sync from web address</button><button type="button" id="importWorksheetBtn">…or choose a file</button><input type="file" id="importWorksheetFile" accept=".html,.htm,text/html" hidden></div>
+      </div>
+      <details style="margin:0 0 10px;color:var(--muted)"><summary style="cursor:pointer">Fetch blocked or "failed to fetch"? Allow the dashboard to read your worksheets</summary>
+        <p>Browsers only let one website read another if it allows it. If the worksheet is on a different address from this dashboard, add a <code>vercel.json</code> file to the <b>worksheet's</b> Vercel project and redeploy:</p>
+        <pre style="background:var(--dark);padding:12px;border-radius:10px;overflow:auto;color:var(--ink)">{
+  "headers": [
+    { "source": "/(.*)", "headers": [ { "key": "Access-Control-Allow-Origin", "value": "*" } ] }
+  ]
+}</pre>
+        <p>If the dashboard and worksheets are in the same Vercel project, nothing is needed.</p>
+      </details>
       <div id="syncPlan" class="manage-panel" style="margin:14px 0" hidden></div>
       <h3 style="margin-top:28px">Questions currently in this lesson</h3>
       <div id="managedQuestions"></div>
@@ -694,6 +706,8 @@
     $("questionManager").hidden = false;
     $("manageLessonTitle").textContent = lesson.worksheet_name;
     $("lessonAccessKey").textContent = lesson.access_token || "Access key unavailable";
+    restoreUrl();
+    syncPlan = null; $("syncPlan").hidden = true;
     $("managedQuestions").textContent = "Loading questions...";
     await loadManagedQuestions();
     $("questionManager").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -729,13 +743,50 @@
     $("importWorksheetFile").click();
   });
 
+  const SYNC_URL_KEY = "dash-worksheet-url:";
+  const urlMemory = () => SYNC_URL_KEY + (managedLesson ? managedLesson.id : "");
+  function restoreUrl() {
+    try { $("worksheetUrl").value = localStorage.getItem(urlMemory()) || ""; } catch (e) { $("worksheetUrl").value = ""; }
+  }
+
   $("importWorksheetFile").addEventListener("change", async e => {
     const file = e.target.files && e.target.files[0];
     if (!file || !managedLesson) return;
+    try { await syncFromText(await file.text(), file.name); }
+    catch (err) { setStatus("Could not sync: " + err.message, true); }
+  });
+
+  $("syncUrlBtn").addEventListener("click", async () => {
+    if (!managedLesson) return;
+    const raw = $("worksheetUrl").value.trim();
+    if (!raw) { setStatus("Paste the worksheet's web address first.", true); return; }
+    let url;
+    try { url = new URL(raw, location.href); if (!/^https?:$/.test(url.protocol)) throw 0; }
+    catch (e) { setStatus("That doesn't look like a web address. It should start with https://", true); return; }
+    $("syncUrlBtn").disabled = true;
+    setStatus("Fetching the worksheet...");
+    try {
+      let res;
+      try { res = await fetch(url.href, { cache: "no-store" }); }
+      catch (netErr) {
+        throw new Error("The browser was blocked from reading " + url.host + ". If the worksheet is on a different address to this dashboard, add the CORS header shown in the instructions (Access-Control-Allow-Origin) to the worksheet's Vercel project, or use the file option.");
+      }
+      if (!res.ok) throw new Error("The address returned an error (" + res.status + "). Check the link opens in your browser.");
+      const text = await res.text();
+      try { localStorage.setItem(urlMemory(), raw); } catch (e) {}
+      await syncFromText(text, url.pathname.split("/").pop() || url.host);
+    } catch (err) {
+      setStatus("Could not sync: " + err.message, true);
+    } finally {
+      $("syncUrlBtn").disabled = false;
+    }
+  });
+
+  async function syncFromText(text, fileName) {
+    if (!managedLesson) return;
     syncPlan = null;
     $("syncPlan").hidden = true;
-    try {
-      const text = await file.text();
+    {
       const doc = new DOMParser().parseFromString(text, "text/html");
       const block = doc.querySelector('script#we-do-questions[type="application/json"]');
       if (!block) throw new Error("This file has no WE DO question list (we-do-questions block).");
@@ -769,12 +820,10 @@
       }
       if (error) throw new Error("Could not read this lesson's questions: " + error.message);
       setStatus("");
-      syncPlan = buildSyncPlan(items, existing || [], file.name);
+      syncPlan = buildSyncPlan(items, existing || [], fileName);
       showSyncPlan();
-    } catch (err) {
-      setStatus("Could not sync: " + err.message, true);
     }
-  });
+  }
 
   // Match each worksheet question to a database row: first by question_code (= worksheet id), then by identical wording
   // (lessons set up before the sync existed). Anything left over is added (worksheet) or removed (database).
