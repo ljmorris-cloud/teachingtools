@@ -58,9 +58,10 @@
     padding-left: 22px; border-left: 3px solid var(--line); line-height: 1.1;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw;
   }
+  .header-q { margin: 0; font-size: 1.25rem; padding: 5px 16px; white-space: nowrap; }
   #lessonTitle { display: none; }   /* the lesson name now lives in the header bar */
   #userBar { display: none; align-items: center; gap: 14px; color: var(--muted); }
-  main { max-width: 1700px; margin: 0 auto; padding: 40px 48px 100px; }
+  main { max-width: 1700px; margin: 0 auto; padding: 14px 48px 60px; }
   h2 { font-size: 3rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; margin: 0 0 8px; }
   .sub { color: var(--muted); font-size: 1.15rem; margin: 0 0 30px; }
 
@@ -78,7 +79,7 @@
     box-shadow: 0 6px 22px rgba(255,79,154,.4);
   }
   button.primary:hover:not(:disabled) { border-color: transparent; transform: translateY(-3px) scale(1.03); }
-  button.link { border: none; background: none; padding: 0; color: var(--cyan); margin-bottom: 18px; font-size: 1.05rem; }
+  button.link { border: none; background: none; padding: 0; color: var(--cyan); margin-bottom: 8px; font-size: 1.05rem; }
   button.link:hover { transform: none; text-decoration: underline; }
   :focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }
 
@@ -145,19 +146,20 @@
 
   /* The question, large enough to read from the back of the room */
   .qbig {
-    margin: 4px 0 6px; padding: 24px 34px 30px; background: var(--panel);
+    margin: 0 0 12px; padding: 20px 30px 24px; background: var(--panel);
     border: 2px solid var(--line); border-left: 12px solid var(--yellow);
     border-radius: var(--radius); box-shadow: 0 0 0 5px rgba(255,210,63,.07);
   }
   .qbig-num {
     display: inline-block; background: var(--yellow); color: var(--dark); font-weight: 800;
-    font-size: 1.2rem; padding: 4px 16px; border-radius: 99px; margin-bottom: 12px;
+    font-size: 1.1rem; padding: 3px 14px; border-radius: 99px; margin-bottom: 8px;
   }
   .qbig-text {
     margin: 0; font-size: clamp(2rem, 3.6vw, 3.6rem); font-weight: 800; line-height: 1.12;
     letter-spacing: -.025em; overflow-wrap: anywhere; white-space: pre-wrap;
   }
-  .rhead { display: flex; align-items: baseline; gap: 22px; margin: 36px 0 22px; }
+  .rhead { display: flex; align-items: baseline; gap: 22px; margin: 14px 0 12px; }
+  #questionArea .qbar { margin: 0 0 6px; }
   .count {
     font-size: 5.5rem; font-weight: 800; line-height: .9; letter-spacing: -.05em;
     background: linear-gradient(135deg, var(--yellow), var(--pink) 60%, var(--violet));
@@ -188,8 +190,8 @@
   }
   .answer.empty { opacity: .6; font-weight: 500; font-style: italic; font-size: 1.4rem; }
   /* ---- Class-size scaling: cards shrink automatically as more students answer ---- */
-  .qbar { position: sticky; top: 10px; z-index: 20; }
-  .rhead.small { margin: 14px 0 12px; gap: 14px; }
+  .qbar { position: sticky; top: 8px; z-index: 20; }
+  .rhead.small { margin: 10px 0 10px; gap: 14px; }
   .rhead.small .count { font-size: 3.5rem; }
   .rhead.small .count-label { font-size: 1.3rem; }
 
@@ -307,7 +309,7 @@
 <body>
 
 <header class="top">
-  <div class="top-left"><h1>Year 8 Teacher Dashboard</h1><span id="headerLesson" class="header-lesson" hidden></span></div>
+  <div class="top-left"><h1>Year 8 Teacher Dashboard</h1><span id="headerLesson" class="header-lesson" hidden></span><span id="headerQ" class="qbig-num header-q" hidden></span></div>
   <div id="userBar"><span id="userEmail"></span><button id="logoutButton">Log out</button></div>
 </header>
 
@@ -363,6 +365,7 @@
   <section id="questionArea" hidden>
     <button class="link" id="backToLessons">← Back to lessons</button>
     <h2 id="lessonTitle"></h2>
+    <div class="qbig" id="qbig" hidden><p class="qbig-text" id="qBigText"></p></div>
     <div class="qbar">
       <select id="questionSelect" aria-label="Question">
         <option value="">Choose a question</option>
@@ -376,7 +379,6 @@
     </div>
 
     <div id="responseArea" hidden>
-      <div class="qbig"><span class="qbig-num" id="qBigNum"></span><p class="qbig-text" id="qBigText"></p></div>
       <div class="rhead" id="rhead">
         <span class="count" id="countNumber">0</span>
         <span class="count-label" id="countLabel">responses</span>
@@ -430,6 +432,7 @@
   function show(areaId) {
     ["classArea", "lessonArea", "questionArea"].forEach(id => { $(id).hidden = id !== areaId; });
     $("headerLesson").hidden = areaId !== "questionArea";
+    if (areaId !== "questionArea") $("headerQ").hidden = true;
   }
 
   /* ---------- Auth ---------- */
@@ -846,6 +849,8 @@
     $("headerLesson").textContent = lessonName;
     $("headerLesson").title = lessonName;
     $("responseArea").hidden = true;
+    $("qbig").hidden = true;
+    $("headerQ").hidden = true;
     $("liveIndicator").hidden = true;
     $("toggleButton").disabled = true;
     setStatus("Loading questions...");
@@ -934,7 +939,7 @@
   $("questionSelect").addEventListener("change", e => {
     stopCollecting();
     if (e.target.value) startCollecting(e.target.value);
-    else { $("responseArea").hidden = true; $("liveIndicator").hidden = true; $("toggleButton").disabled = true; }
+    else { $("responseArea").hidden = true; $("qbig").hidden = true; $("headerQ").hidden = true; $("liveIndicator").hidden = true; $("toggleButton").disabled = true; }
   });
 
   function stepQuestion(dir) {
@@ -959,8 +964,10 @@
     $("toggleButton").disabled = false;
     const opt = $("questionSelect").selectedOptions[0];
     const label = opt && opt.dataset.label ? opt.dataset.label : "";
-    $("qBigNum").textContent = !label ? "Question" : /^question/i.test(label) ? label : "Question " + label;
+    $("headerQ").textContent = !label ? "Question" : /^question/i.test(label) ? label : "Question " + label;
+    $("headerQ").hidden = false;
     $("qBigText").textContent = opt && opt.dataset.text ? opt.dataset.text : "";
+    $("qbig").hidden = false;
     $("responseArea").hidden = false;
     $("responses").innerHTML = "";
     $("liveIndicator").hidden = false;
