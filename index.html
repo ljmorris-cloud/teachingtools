@@ -401,7 +401,8 @@
         <div class="manage-actions"><button class="primary" type="submit">Create lesson</button></div>
       </form>
     </div>
-    <div class="manage-panel" id="rosterPanel">
+    <div style="margin:0 0 24px"><button id="rosterToggle" type="button" aria-expanded="false">👥 Show class list</button></div>
+    <div class="manage-panel" id="rosterPanel" hidden>
       <h3>👥 Class list <span id="rosterCount" style="color:var(--muted);font-weight:600"></span></h3>
       <p>The names students choose from in this class's lessons. Each name can be taken once per lesson, so students can't use each other's. Paste names one per line.</p>
       <p id="rosterSetup" class="fb info" hidden>Class lists aren't set up in the database yet. Run <code>supabase-class-lists.sql</code> once in the Supabase SQL editor, then reload this page.</p>
@@ -683,6 +684,7 @@
     managedLesson = null;
     show("lessonArea");
     $("classTitle").textContent = className;
+    setRosterOpen(false);   // the class list stays tucked away until you ask for it
     loadRoster();
     $("lessons").textContent = "Loading lessons...";
     const { data, error } = await supabaseClient
@@ -820,6 +822,13 @@
   });
 
   /* ---------- Class list (names students choose from) ---------- */
+  function setRosterOpen(open) {
+    $("rosterPanel").hidden = !open;
+    $("rosterToggle").textContent = open ? "👥 Hide class list" : "👥 Show class list";
+    $("rosterToggle").setAttribute("aria-expanded", String(open));
+  }
+  $("rosterToggle").addEventListener("click", () => setRosterOpen($("rosterPanel").hidden));
+
   let rosterRows = [];
   let rosterReady = true;
 
@@ -1762,6 +1771,7 @@
     // Students unlock straight away: start a fresh round for the next Chin It. The board stays on screen until you close it.
     me.subs.clear(); me.round = Date.now(); chinCount();
     me.phase = "open"; chinState(me);
+    [1500, 4000].forEach(ms => setTimeout(() => { if (me.phase === "open") chinState(me); }, ms));   // repeat, in case a student's phone missed it
     chinBusy = false;
   }
   // Closing the board just hides it. Students were already unlocked (with a fresh round) when the answers were revealed.
