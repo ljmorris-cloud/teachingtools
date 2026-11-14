@@ -247,10 +247,12 @@
     color: var(--muted); font-size: 1.5rem; font-weight: 600;
   }
   .hidden-state {
-    text-align: center; padding: 80px 20px; border-radius: var(--radius);
-    background: linear-gradient(135deg, var(--violet), var(--pink));
-    color: var(--dark); font-size: 2rem; font-weight: 800;
+    display: inline-block; padding: 4px 0; margin-top: 4px; cursor: pointer;
+    font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em;
+    background: linear-gradient(90deg, var(--violet), var(--pink));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
   }
+  .hidden-state:hover { text-decoration: underline; text-decoration-color: var(--pink); text-underline-offset: 6px; }
 
   .manage-panel {
     background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius);
@@ -1124,6 +1126,7 @@
   }
 
   $("toggleButton").addEventListener("click", () => setReveal(!revealed));
+  $("hiddenNotice").addEventListener("click", () => setReveal(true));   // click the message to reveal
 
   function effectiveDensity(n) {
     if (densityMode !== "auto") return densityMode;
