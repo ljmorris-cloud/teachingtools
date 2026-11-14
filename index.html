@@ -128,6 +128,32 @@
     border-radius: var(--radius); padding: 18px 22px; margin: 22px 0;
     box-shadow: 0 0 0 5px rgba(63,224,245,.08);
   }
+  #pickButton { margin-left: auto; font-weight: 800; }
+  #pickOverlay {
+    position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center;
+    background: rgba(8,4,24,.9); padding: 20px; overflow-y: auto;
+  }
+  #pickOverlay[hidden] { display: none; }
+  .pick-card {
+    width: min(1000px, 100%); background: var(--panel); border: 2px solid var(--line); border-radius: 28px;
+    padding: 26px 30px 22px; text-align: center; box-shadow: 0 0 0 6px rgba(63,224,245,.08), 0 30px 80px rgba(0,0,0,.5);
+  }
+  .pick-label { color: var(--cyan); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; font-size: .95rem; }
+  .pick-name {
+    font-size: clamp(2.8rem, 12vw, 9rem); font-weight: 900; line-height: 1.05; margin: 20px 0 8px;
+    word-break: break-word; min-height: 1.1em;
+  }
+  .pick-name.small { font-size: clamp(1.6rem, 5vw, 3rem); color: var(--yellow); }
+  .pick-name.pop { animation: pickpop .26s ease-out; }
+  @keyframes pickpop { from { transform: scale(.7); opacity: .15; } to { transform: scale(1); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .pick-name.pop { animation: none; } }
+  .pick-meta { color: var(--muted); min-height: 1.5em; margin: 0; }
+  .pick-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 20px 0 14px; }
+  .pick-options { display: flex; gap: 8px 26px; justify-content: center; flex-wrap: wrap; color: var(--muted); font-size: .95rem; }
+  .pick-options label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .pick-history { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+  .pick-chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: .9rem; }
+  .pick-hint { color: var(--muted); font-size: .85rem; margin: 14px 0 0; }
   .qbar select {
     flex: 1 1 460px; padding: 15px 16px; border-radius: 14px;
     border: 2px solid var(--cyan); background: var(--dark); font-size: 1.2rem; font-weight: 600;
@@ -428,6 +454,7 @@
       <button id="sizeButton" type="button" title="Card size">Size: Auto</button>
       <button id="sortButton" type="button" title="Sort order">Sort: Time</button>
       <button id="toggleButton" disabled>Hide responses</button>
+      <button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button>
       <span id="liveIndicator" class="live paused" hidden>Live</span>
     </div>
 
@@ -443,6 +470,26 @@
     <div id="gridArea" hidden></div>
   </section>
 </main>
+
+<div id="pickOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="pickLabel">
+  <div class="pick-card">
+    <div class="pick-label" id="pickLabel">🎲 Pick a student · <span id="pickLesson"></span></div>
+    <div class="pick-name" id="pickName" aria-live="polite"></div>
+    <p class="pick-meta" id="pickMeta"></p>
+    <div class="pick-actions">
+      <button class="primary" id="pickAgain" type="button">Pick again</button>
+      <button id="pickNotHere" type="button" title="Not in class today: leave them out until a new round">Not here, pick another</button>
+      <button id="pickNewRound" type="button" title="Put everyone back in the pool">New round</button>
+      <button id="pickClose" type="button">Close</button>
+    </div>
+    <div class="pick-options">
+      <label><input type="checkbox" id="pickNoRepeat"> Don't repeat until everyone has had a turn</label>
+      <label><input type="checkbox" id="pickJoinedOnly"> Only students who have joined this lesson</label>
+    </div>
+    <div class="pick-history" id="pickHistory"></div>
+    <p class="pick-hint">Press P to pick · Esc to close</p>
+  </div>
+</div>
 
 <script>
   const SUPABASE_URL = "https://agkixedmhuxskfdrfbcn.supabase.co";
@@ -666,7 +713,12 @@
         if (!u || !u.length) { setStatus("The database did not allow this change. Change it in Supabase instead.", true); return; }
         loadLessons($("classTitle").textContent);
       });
-      card.append(badge, h, meta, open, manage, tog, remove);
+      const pick = document.createElement("button");
+      pick.type = "button";
+      pick.textContent = "🎲 Pick a student";
+      pick.title = "Pick a student at random from this class";
+      pick.addEventListener("click", () => pickAndShow(lesson.id, lesson.worksheet_name));
+      card.append(badge, h, meta, open, pick, manage, tog, remove);
       box.appendChild(card);
     });
   }
@@ -1595,8 +1647,159 @@
   }
 
   // Keyboard: ← / → (or Page Up / Page Down, as most clickers send) change question, H hides or shows responses, N hides or shows names, G opens the progress grid.
+  /* ---------- Pick a student (a non-volunteer) ---------- */
+  // Picks at random from this class's list, instantly, using the list already on screen.
+  const PICK_OPTS_KEY = "dash-pick-options";
+  let pickSessionId = null, pickLessonName = "", pickBusy = false;
+  let pickJoined = new Set(), pickJoinedFor = null;
+  const pickOpts = (() => {
+    const base = { noRepeat: true, joinedOnly: false };
+    try { return Object.assign(base, JSON.parse(localStorage.getItem(PICK_OPTS_KEY) || "{}")); } catch (e) { return base; }
+  })();
+  const savePickOpts = () => { try { localStorage.setItem(PICK_OPTS_KEY, JSON.stringify(pickOpts)); } catch (e) {} };
+
+  function pickState() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem("dash-pick:" + pickSessionId) || "null"); } catch (e) {}
+    s = s || {};
+    return { used: new Set(s.used || []), skip: new Set(s.skip || []), history: s.history || [], last: s.last || "" };
+  }
+  function savePickState(s) {
+    try {
+      localStorage.setItem("dash-pick:" + pickSessionId, JSON.stringify(
+        { used: [...s.used], skip: [...s.skip], history: s.history.slice(-60), last: s.last }));
+    } catch (e) {}
+  }
+
+  // Unbiased random whole number from 0 to n-1.
+  function randInt(n) {
+    if (n <= 1) return 0;
+    try {
+      const max = Math.floor(4294967296 / n) * n, buf = new Uint32Array(1);
+      do { crypto.getRandomValues(buf); } while (buf[0] >= max);
+      return buf[0] % n;
+    } catch (e) { return Math.floor(Math.random() * n); }
+  }
+
+  // Who has chosen their name in this lesson (so is presumably in class today).
+  async function refreshJoined() {
+    const sid = pickSessionId;
+    if (!sid) return false;
+    let { data, error } = await supabaseClient.rpc("teacher_list_lesson_claims", { p_session_id: sid });
+    if (isMissingFn(error)) {
+      ({ data, error } = await supabaseClient.from("name_claims").select("student_id").eq("session_id", sid));
+    }
+    if (sid !== pickSessionId) return false;
+    if (error) { pickJoinedFor = null; return false; }
+    pickJoined = new Set((data || []).map(c => c.student_id));
+    pickJoinedFor = sid;
+    return true;
+  }
+
+  function choosePick(notHere) {
+    if (!rosterRows.length) return { empty: "nolist" };
+    const s = pickState();
+    if (notHere && s.last) { s.skip.add(s.last); s.used.delete(s.last); s.history.pop(); s.last = ""; }
+    let pool = rosterRows.filter(r => !s.skip.has(r.id));
+    let note = "";
+    if (pickOpts.joinedOnly) {
+      if (pickJoinedFor === pickSessionId) pool = pool.filter(r => pickJoined.has(r.id));
+      else note = "Couldn't check who has joined, so the whole class list is included.";
+    }
+    if (!pool.length) {
+      savePickState(s);
+      return { empty: pickOpts.joinedOnly && !note ? "nojoined" : "allskipped", note };
+    }
+    let avail = pickOpts.noRepeat ? pool.filter(r => !s.used.has(r.id)) : pool;
+    if (!avail.length) {
+      s.used.clear(); s.history = [];
+      avail = pool;
+      note = "Everyone has had a turn, so a new round has started.";
+    }
+    if (avail.length > 1 && s.last) avail = avail.filter(r => r.id !== s.last);   // never the same student twice in a row
+    const r = avail[randInt(avail.length)];
+    s.used.add(r.id); s.last = r.id; s.history.push(r.name);
+    savePickState(s);
+    return { name: r.name, left: pool.filter(x => !s.used.has(x.id)).length, total: pool.length, note, history: s.history };
+  }
+
+  function showPick(res) {
+    const nameEl = $("pickName"), meta = $("pickMeta"), hist = $("pickHistory");
+    nameEl.classList.remove("pop"); void nameEl.offsetWidth;
+    hist.textContent = "";
+    if (res.empty) {
+      const msg = {
+        nolist: ["No class list yet", "Add this class's names on the class page (Class list), then try again."],
+        nojoined: ["Nobody has joined yet", "No one has chosen their name in this lesson yet. Untick “Only students who have joined” to pick from the whole class."],
+        allskipped: ["No one left to pick", "Press “New round” to bring everyone back."]
+      }[res.empty];
+      nameEl.textContent = msg[0]; nameEl.classList.add("small");
+      meta.textContent = msg[1] + (res.note ? " " + res.note : "");
+      return;
+    }
+    nameEl.classList.remove("small");
+    nameEl.textContent = res.name;
+    nameEl.classList.add("pop");
+    meta.textContent = (pickOpts.noRepeat
+      ? res.left + " of " + res.total + " still to be picked this round"
+      : res.total + " students in the pool") + (res.note ? " · " + res.note : "");
+    res.history.slice(-12).forEach(n => {
+      const chip = document.createElement("span");
+      chip.className = "pick-chip"; chip.textContent = n; hist.appendChild(chip);
+    });
+  }
+
+  async function pickAndShow(sessionId, lessonName, notHere) {
+    if (sessionId) { pickSessionId = sessionId; pickLessonName = lessonName || ""; }
+    if (!pickSessionId || pickBusy) return;
+    $("pickLesson").textContent = pickLessonName;
+    $("pickNoRepeat").checked = !!pickOpts.noRepeat;
+    $("pickJoinedOnly").checked = !!pickOpts.joinedOnly;
+    $("pickOverlay").hidden = false;
+    // These two waits only happen on the very first pick (list or joined names not loaded yet); after that it is instant.
+    if (!rosterRows.length && currentClassId) { pickBusy = true; try { await loadRoster(); } finally { pickBusy = false; } }
+    if (pickOpts.joinedOnly && pickJoinedFor !== pickSessionId) { pickBusy = true; try { await refreshJoined(); } finally { pickBusy = false; } }
+    showPick(choosePick(notHere));
+    if (pickOpts.joinedOnly) refreshJoined();   // keep the joined list fresh for the next pick
+    $("pickAgain").focus();
+  }
+
+  let pickReturnFocus = null;
+  function closePick() {
+    $("pickOverlay").hidden = true;
+    if (pickReturnFocus && pickReturnFocus.focus) pickReturnFocus.focus();
+  }
+
+  $("pickButton").addEventListener("click", e => { pickReturnFocus = e.currentTarget; pickAndShow(currentSessionId, $("lessonTitle").textContent); });
+  $("pickAgain").addEventListener("click", () => pickAndShow(null, null, false));
+  $("pickNotHere").addEventListener("click", () => pickAndShow(null, null, true));
+  $("pickNewRound").addEventListener("click", () => {
+    savePickState({ used: new Set(), skip: new Set(), history: [], last: "" });
+    const n = $("pickName"); n.classList.remove("pop"); n.classList.add("small"); n.textContent = "New round";
+    $("pickMeta").textContent = "Everyone is back in the pool. Press “Pick again”."; $("pickHistory").textContent = "";
+  });
+  $("pickClose").addEventListener("click", closePick);
+  $("pickOverlay").addEventListener("click", e => { if (e.target === $("pickOverlay")) closePick(); });
+  $("pickNoRepeat").addEventListener("change", e => { pickOpts.noRepeat = e.target.checked; savePickOpts(); });
+  $("pickJoinedOnly").addEventListener("change", e => {
+    pickOpts.joinedOnly = e.target.checked; savePickOpts();
+    if (pickOpts.joinedOnly) refreshJoined();
+  });
   document.addEventListener("keydown", e => {
-    if ($("questionArea").hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const open = !$("pickOverlay").hidden;
+    if (open && e.key === "Escape") { e.preventDefault(); closePick(); return; }
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    if (e.key.toLowerCase() === "p" && (open || !$("questionArea").hidden)) {
+      e.preventDefault();
+      if (open) pickAndShow(null, null, false);
+      else { pickReturnFocus = $("pickButton"); pickAndShow(currentSessionId, $("lessonTitle").textContent); }
+    }
+  });
+
+  document.addEventListener("keydown", e => {
+    if ($("questionArea").hidden || !$("pickOverlay").hidden || e.ctrlKey || e.metaKey || e.altKey) return;
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return;
     const k = e.key.toLowerCase();
