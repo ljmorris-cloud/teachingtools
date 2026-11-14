@@ -134,10 +134,7 @@
   #chinOverlay[hidden], #chinBoard[hidden], #chinNum[hidden] { display: none; }
   #chinNum { margin: auto; font-size: 45vmin; font-weight: 900; color: var(--yellow); line-height: 1; }
   #chinBoard { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
-  #chinGrid { flex: 1; min-height: 0; display: grid; gap: 14px; overflow: auto; }
-  .chin-tile { background: var(--panel); border: 2px solid var(--line); border-radius: 18px; padding: 14px 18px; display: flex; flex-direction: column; min-height: 120px; min-width: 0; }
-  .chin-name { color: var(--cyan); font-weight: 800; font-size: 1.15rem; }
-  .chin-text { flex: 1; min-height: 0; overflow: hidden; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; white-space: pre-wrap; margin-top: 6px; }
+  #chinGrid { flex: 1; min-height: 0; overflow: auto; align-content: start; }
   .chin-bar { display: flex; gap: 12px; justify-content: center; }
   #pickOverlay {
     position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center;
@@ -1718,30 +1715,29 @@
       key = "n:" + name.toLowerCase();
     }
     if (me.phase !== "open") return ack(false, "closed");
-    me.subs.set(key, { name, text });
+    me.subs.set(key, { name, text, at: new Date() });
     chinCount();
     ack(true);
   }
 
-  function chinFit(tile) {
-    const t = tile.querySelector(".chin-text");
-    for (let size = 96; size > 14; size -= 4) { t.style.fontSize = size + "px"; if (t.scrollHeight <= t.clientHeight && t.scrollWidth <= t.clientWidth) break; }
-  }
   function chinBoard(me) {
-    const items = [...me.subs.values()].sort((a, b) => a.name.localeCompare(b.name));
-    const cols = Math.max(1, Math.min(items.length, Math.ceil(Math.sqrt(items.length * 1.7))));
+    const items = [...me.subs.values()].map((v, i) => ({ ...v, n: i + 1 }));   // number = order they arrived, like the normal cards
+    items.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
     const grid = $("chinGrid");
+    grid.className = "responses d-" + effectiveDensity(items.length);
     grid.textContent = "";
-    grid.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
-    grid.style.gridAutoRows = "minmax(120px, 1fr)";
     items.forEach(it => {
-      const tile = document.createElement("div"); tile.className = "chin-tile";
-      const n = document.createElement("div"); n.className = "chin-name"; n.textContent = it.name;
-      const t = document.createElement("div"); t.className = "chin-text"; t.textContent = it.text;
-      tile.append(n, t); grid.appendChild(tile);
+      const card = document.createElement("article"); card.className = "response fresh";
+      const who = document.createElement("div"); who.className = "who";
+      const av = document.createElement("div"); av.className = "avatar"; av.textContent = it.n;
+      const nm = document.createElement("span"); nm.className = "name"; nm.textContent = it.name; nm.title = it.name;
+      const tm = document.createElement("span"); tm.className = "time";
+      tm.textContent = it.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      who.append(av, nm, tm);
+      const ans = document.createElement("p"); ans.className = "answer open"; ans.textContent = it.text;
+      card.append(who, ans); grid.appendChild(card);
     });
     $("chinBoard").hidden = false;
-    grid.querySelectorAll(".chin-tile").forEach(chinFit);
   }
 
   async function chinGo() {
@@ -1765,15 +1761,17 @@
     chinBoard(me);
     chinBusy = false;
   }
+  // Closing the board ends that Chin It: students unlock, and the next one starts fresh.
+  // (If you cancel during the 3-2-1, the responses are kept.)
   function chinClose() {
     $("chinOverlay").hidden = true;
+    const me = chin; if (!me) return;
+    if (me.phase === "revealed") { me.subs.clear(); me.round = Date.now(); chinCount(); }
+    me.phase = "open"; chinState(me);
   }
   $("chinBtn").addEventListener("click", chinGo);
   $("chinClose").addEventListener("click", chinClose);
-  $("chinNew").addEventListener("click", () => {
-    const me = chin; if (!me) return;
-    me.subs.clear(); me.round = Date.now(); me.phase = "open"; chinState(me); chinCount(); chinClose();
-  });
+  $("chinNew").addEventListener("click", chinClose);
   document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("chinOverlay").hidden) { e.preventDefault(); chinClose(); } });
 
   /* ---------- Pick a student (a non-volunteer) ---------- */
