@@ -368,13 +368,26 @@
         <div class="manage-actions"><button class="primary" type="submit">Create lesson</button></div>
       </form>
     </div>
+    <div class="manage-panel" id="rosterPanel">
+      <h3>👥 Class list <span id="rosterCount" style="color:var(--muted);font-weight:600"></span></h3>
+      <p>The names students choose from in this class's lessons. Each name can be taken once per lesson, so students can't use each other's. Paste names one per line.</p>
+      <p id="rosterSetup" class="fb info" hidden>Class lists aren't set up in the database yet. Run <code>supabase-class-lists.sql</code> once in the Supabase SQL editor, then reload this page.</p>
+      <form id="rosterForm" class="manage-form">
+        <textarea id="rosterText" style="min-height:105px" placeholder="One name per line, e.g.&#10;Ava Nguyen&#10;Liam Brown&#10;Mia T."></textarea>
+        <div class="manage-actions"><button class="primary" type="submit">Add names</button></div>
+      </form>
+      <details style="margin-top:14px"><summary style="cursor:pointer;font-weight:700">Show or edit the list</summary><div id="rosterList" style="margin-top:10px"></div></details>
+    </div>
     <div id="lessons" class="grid"></div>
     <section id="questionManager" class="manage-panel" hidden>
       <button class="link" id="closeQuestionManager">← Back to lessons</button>
       <h3 id="manageLessonTitle">Manage lesson</h3>
       <p>Use this access key in the worksheet's <code>ACCESS_TOKEN</code> constant.</p>
       <div class="key-line"><span class="key-value" id="lessonAccessKey"></span><button class="small-button" id="copyAccessKey" type="button">Copy key</button></div>
-      <h3>Sync WE DO questions from the worksheet</h3>
+      <h3>Link to give this class</h3>
+      <p>Students in <b id="linkClass">this class</b> open this link. It carries this lesson's key, so their names and answers come here. Give each class its own link.</p>
+      <div class="key-line"><span class="key-value" id="studentLink" style="font-size:.95rem"></span><button class="small-button" id="copyStudentLink" type="button">Copy link</button></div>
+      <h3 style="margin-top:28px">Sync WE DO questions from the worksheet</h3>
       <p>The worksheet is the only place WE DO questions are written. Choose the worksheet file and this lesson's questions are brought into line with it. You will see what will be added, kept and removed before anything changes. Re-sync any time you edit the worksheet's questions.</p>
       <div class="manage-form" style="margin-bottom:10px">
         <input id="worksheetUrl" type="url" placeholder="Worksheet web address, e.g. https://your-project.vercel.app/rgb.html" autocomplete="off">
@@ -390,6 +403,9 @@
         <p>If the dashboard and worksheets are in the same Vercel project, nothing is needed.</p>
       </details>
       <div id="syncPlan" class="manage-panel" style="margin:14px 0" hidden></div>
+      <h3 style="margin-top:28px">Names chosen in this lesson <span id="claimCount" style="color:var(--muted);font-weight:600"></span></h3>
+      <p>Release a name if a student picked the wrong one or needs to continue on a different computer. They can then choose again.</p>
+      <div id="claimsList"></div>
       <h3 style="margin-top:28px">Questions currently in this lesson</h3>
       <div id="managedQuestions"></div>
     </section>
@@ -602,6 +618,7 @@
     managedLesson = null;
     show("lessonArea");
     $("classTitle").textContent = className;
+    loadRoster();
     $("lessons").textContent = "Loading lessons...";
     const { data, error } = await supabaseClient
       .from("sessions")
@@ -709,6 +726,9 @@
     restoreUrl();
     syncPlan = null; $("syncPlan").hidden = true;
     $("managedQuestions").textContent = "Loading questions...";
+    $("linkClass").textContent = $("classTitle").textContent || "this class";
+    updateStudentLink();
+    loadClaims();
     await loadManagedQuestions();
     $("questionManager").scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -726,6 +746,140 @@
     } catch (err) {
       setStatus("Could not copy automatically. Select and copy the key shown above.", true);
     }
+  });
+
+  /* ---------- Class list (names students choose from) ---------- */
+  let rosterRows = [];
+  let rosterReady = true;
+
+  function noRosterTables(err) {
+    return err && /class_students|name_claims|relation|does not exist|schema cache/i.test(err.message || "");
+  }
+
+  async function loadRoster() {
+    if (!currentClassId) return;
+    const { data, error } = await supabaseClient.from("class_students")
+      .select("id, name").eq("class_id", currentClassId).order("name");
+    if (error) {
+      rosterReady = !noRosterTables(error);
+      $("rosterSetup").hidden = rosterReady;
+      if (rosterReady) setStatus("Could not load the class list: " + error.message, true);
+      rosterRows = [];
+    } else {
+      rosterReady = true; $("rosterSetup").hidden = true; rosterRows = data || [];
+    }
+    $("rosterCount").textContent = rosterRows.length ? "(" + rosterRows.length + " students)" : "(none yet: students will type their first name)";
+    const box = $("rosterList");
+    box.innerHTML = "";
+    if (!rosterRows.length) { box.textContent = "No names yet."; return; }
+    rosterRows.forEach(row => {
+      const line = document.createElement("div");
+      line.style.cssText = "display:flex;align-items:center;gap:12px;padding:4px 0;border-bottom:1px solid var(--line)";
+      const nm = document.createElement("span");
+      nm.textContent = row.name; nm.style.flex = "1";
+      const rm = document.createElement("button");
+      rm.type = "button"; rm.className = "small-button danger"; rm.textContent = "Remove";
+      rm.addEventListener("click", () => removeStudent(row));
+      line.append(nm, rm);
+      box.appendChild(line);
+    });
+  }
+
+  $("rosterForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    if (!currentClassId) return;
+    const have = new Set(rosterRows.map(r => r.name.toLowerCase()));
+    const seen = new Set();
+    const names = $("rosterText").value.split(/\r?\n/)
+      .map(l => l.replace(/\s+/g, " ").trim().replace(/^(?:\d+\s*[.):\-]\s*|[-*•]\s+)/, "").trim().slice(0, 40))
+      .filter(n => { const k = n.toLowerCase(); if (!n || have.has(k) || seen.has(k)) return false; seen.add(k); return true; });
+    if (!names.length) { setStatus("No new names to add (blank lines and names already on the list are skipped).", true); return; }
+    if (names.length > 100) { setStatus("That is a lot of names at once (" + names.length + "). Add up to 100 at a time.", true); return; }
+    const button = e.submitter; if (button) button.disabled = true;
+    const { error } = await supabaseClient.from("class_students")
+      .insert(names.map(name => ({ class_id: currentClassId, name })));
+    if (button) button.disabled = false;
+    if (error) {
+      if (noRosterTables(error)) { $("rosterSetup").hidden = false; setStatus("Class lists aren't set up in the database yet.", true); }
+      else setStatus("Could not add names: " + error.message, true);
+      return;
+    }
+    $("rosterText").value = "";
+    setStatus(names.length + " name" + (names.length === 1 ? "" : "s") + " added to the class list.");
+    await loadRoster();
+    if (managedLesson) loadClaims();
+  });
+
+  async function removeStudent(row) {
+    if (!confirm("Remove \"" + row.name + "\" from the class list?\n\nTheir name will no longer appear in lessons for this class. Answers they already submitted stay as they are.")) return;
+    const { error } = await supabaseClient.from("class_students").delete().eq("id", row.id);
+    if (error) { setStatus("Could not remove the name: " + error.message, true); return; }
+    setStatus("Removed " + row.name + ".");
+    await loadRoster();
+    if (managedLesson) loadClaims();
+  }
+
+  /* ---------- Names chosen in the open lesson ---------- */
+  async function loadClaims() {
+    const box = $("claimsList");
+    if (!managedLesson) return;
+    box.textContent = "Loading...";
+    if (!rosterRows.length) { $("claimCount").textContent = ""; box.textContent = "This class has no class list, so students type their first name."; return; }
+    const { data, error } = await supabaseClient.from("name_claims")
+      .select("student_id, claimed_at").eq("session_id", managedLesson.id);
+    if (error) { box.textContent = noRosterTables(error) ? "Class lists aren't set up in the database yet." : "Could not load names: " + error.message; return; }
+    const claimed = new Map((data || []).map(c => [c.student_id, c.claimed_at]));
+    $("claimCount").textContent = "(" + claimed.size + " of " + rosterRows.length + " students)";
+    box.innerHTML = "";
+    const table = document.createElement("table");
+    table.style.cssText = "width:100%;border-collapse:collapse";
+    rosterRows.forEach(row => {
+      const tr = table.insertRow();
+      const when = claimed.get(row.id);
+      const c1 = tr.insertCell(); c1.textContent = row.name;
+      const c2 = tr.insertCell();
+      c2.textContent = when ? "Chosen " + new Date(when).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Not chosen yet";
+      c2.style.color = when ? "var(--lime)" : "var(--muted)";
+      const c3 = tr.insertCell();
+      if (when) {
+        const rel = document.createElement("button");
+        rel.type = "button"; rel.className = "small-button"; rel.textContent = "Release name";
+        rel.addEventListener("click", () => releaseName(row));
+        c3.appendChild(rel);
+      }
+      [c1, c2, c3].forEach(c => { c.style.cssText += ";padding:5px 10px;border-bottom:1px solid var(--line)"; });
+    });
+    box.appendChild(table);
+  }
+
+  async function releaseName(row) {
+    if (!managedLesson) return;
+    if (!confirm("Release \"" + row.name + "\"?\n\nWhoever holds the name will be asked to choose again. Answers already submitted stay under this name.")) return;
+    const { error } = await supabaseClient.from("name_claims").delete()
+      .eq("session_id", managedLesson.id).eq("student_id", row.id);
+    if (error) { setStatus("Could not release the name: " + error.message, true); return; }
+    setStatus("Released " + row.name + ".");
+    loadClaims();
+  }
+
+  /* ---------- Link for students ---------- */
+  function updateStudentLink() {
+    const el = $("studentLink");
+    if (!managedLesson) { el.textContent = ""; return; }
+    const raw = $("worksheetUrl").value.trim();
+    if (!raw) { el.textContent = "Paste the worksheet's web address below first, and the link will appear here."; return; }
+    try {
+      const u = new URL(raw, location.href);
+      u.search = ""; u.hash = "";
+      el.textContent = u.href + "?key=" + managedLesson.access_token;
+    } catch (e) { el.textContent = "Check the worksheet's web address below."; }
+  }
+  $("worksheetUrl").addEventListener("input", updateStudentLink);
+  $("copyStudentLink").addEventListener("click", async () => {
+    const link = $("studentLink").textContent;
+    if (!/\?key=/.test(link)) return;
+    try { await navigator.clipboard.writeText(link); setStatus("Student link copied."); }
+    catch (err) { setStatus("Could not copy automatically. Select and copy the link shown.", true); }
   });
 
   /* ---------- Sync WE DO questions from the worksheet ---------- */
