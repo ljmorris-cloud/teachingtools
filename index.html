@@ -218,6 +218,19 @@
   }
   .response.dim { opacity: .15; filter: saturate(.4); }
 
+  /* Progress grid */
+  .gridwrap { overflow: auto; max-height: calc(100vh - 230px); border: 2px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 6px; }
+  .pgrid { border-collapse: separate; border-spacing: 3px; width: 100%; }
+  .pgrid th { position: sticky; top: 0; z-index: 2; background: var(--panel); color: var(--muted); font-size: .95rem; padding: 6px 2px; cursor: pointer; white-space: nowrap; }
+  .pgrid th small { display: block; font-size: .7rem; opacity: .8; }
+  .pgrid th:hover { color: var(--cyan); }
+  .pgrid th.cur { color: var(--yellow); }
+  .pgrid th.nm { left: 0; z-index: 4; text-align: left; padding-left: 12px; cursor: default; }
+  .pgrid td.nm { position: sticky; left: 0; z-index: 1; background: var(--panel); font-weight: 800; padding: 2px 14px 2px 12px; white-space: nowrap; }
+  .pgrid td.c { min-width: 26px; height: 26px; border-radius: 7px; background: var(--panel2); }
+  .pgrid td.c.done { background: var(--lime); }
+  .pgrid td.tot { font-weight: 800; color: var(--muted); text-align: center; padding: 0 10px; }
+
   .tally { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 20px; }
   .chip {
     display: inline-flex; align-items: center; gap: 10px; max-width: 100%;
@@ -373,6 +386,9 @@
       </select>
       <button id="prevQ" aria-label="Previous question">← Prev</button>
       <button id="nextQ" aria-label="Next question">Next →</button>
+      <button id="gridButton" type="button" title="Who has answered what (G)">Progress grid</button>
+      <button id="flowButton" type="button" title="Question first, then reveal on the next click">Two-step: On</button>
+      <button id="namesButton" type="button" title="Show or hide names (N)">Names: Shown</button>
       <button id="sizeButton" type="button" title="Card size">Size: Auto</button>
       <button id="sortButton" type="button" title="Sort order">Sort: Time</button>
       <button id="toggleButton" disabled>Hide responses</button>
@@ -385,9 +401,10 @@
         <span class="count-label" id="countLabel">responses</span>
       </div>
       <div id="tally" class="tally" hidden></div>
-      <div id="hiddenNotice" class="hidden-state" hidden>Responses are hidden. Students are still submitting.</div>
+      <div id="hiddenNotice" class="hidden-state" hidden>Answers are hidden. Click to reveal them.</div>
       <div id="responses" class="responses"></div>
     </div>
+    <div id="gridArea" hidden></div>
   </section>
 </main>
 
@@ -424,6 +441,25 @@
   let sortMode = "time";         // time | name | answer
   let activeFilter = null;       // normalised answer being highlighted
   let rtTimer = null;
+  let namesHidden = false;
+  let twoStep = true;   // question first, then a second click reveals the answers
+  let gridOpen = false, gridTimer = null, lastGridSig = "";
+
+  // Remember where the teacher was, so a refresh returns to the same class, lesson and question.
+  const NAV_KEY = "dashNav";
+  function loadNav() { try { return JSON.parse(localStorage.getItem(NAV_KEY) || "{}"); } catch (e) { return {}; } }
+  function saveNav(patch) { try { localStorage.setItem(NAV_KEY, JSON.stringify(Object.assign(loadNav(), patch))); } catch (e) {} }
+  async function restoreNav(nav) {
+    currentClassId = nav.classId;
+    await loadLessons(nav.className);
+    if (!nav.sessionId) return;
+    currentSessionId = nav.sessionId;
+    await loadQuestions(nav.lessonName || "");
+    if (!nav.questionId) return;
+    const sel = $("questionSelect");
+    sel.value = nav.questionId;
+    if (sel.value === nav.questionId) sel.dispatchEvent(new Event("change"));
+  }
 
   function setStatus(msg, isError) {
     statusEl.textContent = msg;
@@ -449,6 +485,7 @@
 
   $("logoutButton").addEventListener("click", async () => {
     stopCollecting();
+    try { localStorage.removeItem(NAV_KEY); } catch (e) {}
     await supabaseClient.auth.signOut();
     location.reload();
   });
@@ -460,7 +497,9 @@
       $("userEmail").textContent = data && data.user ? data.user.email : "";
     });
     setStatus("");
-    loadClasses();
+    const nav = loadNav();
+    if (nav.classId && nav.className) restoreNav(nav).catch(() => loadClasses());
+    else loadClasses();
   }
 
   supabaseClient.auth.getSession().then(async ({ data }) => {
@@ -493,6 +532,7 @@
 
   async function loadClasses() {
     stopCollecting();
+    saveNav({ classId: null, className: null, sessionId: null, lessonName: null, questionId: null });
     $("questionManager").hidden = true;
     managedLesson = null;
     show("classArea");
@@ -538,6 +578,7 @@
   /* ---------- Lessons ---------- */
   async function loadLessons(className) {
     stopCollecting();
+    saveNav({ classId: currentClassId, className, sessionId: null, lessonName: null, questionId: null });
     $("questionManager").hidden = true;
     managedLesson = null;
     show("lessonArea");
@@ -577,7 +618,18 @@
       remove.type = "button";
       remove.textContent = "Delete lesson";
       remove.addEventListener("click", () => deleteLesson(lesson));
-      card.append(badge, h, meta, open, manage, remove);
+      const tog = document.createElement("button");
+      tog.className = "small-button";
+      tog.type = "button";
+      tog.textContent = lesson.active ? "Make inactive" : "Make active";
+      tog.addEventListener("click", async () => {
+        const { data: u, error: err } = await supabaseClient
+          .from("sessions").update({ active: !lesson.active }).eq("id", lesson.id).select("id");
+        if (err) { setStatus("Could not change the lesson: " + err.message, true); return; }
+        if (!u || !u.length) { setStatus("The database did not allow this change. Change it in Supabase instead.", true); return; }
+        loadLessons($("classTitle").textContent);
+      });
+      card.append(badge, h, meta, open, manage, tog, remove);
       box.appendChild(card);
     });
   }
@@ -863,6 +915,7 @@
   /* ---------- Questions ---------- */
   async function loadQuestions(lessonName) {
     stopCollecting();
+    saveNav({ sessionId: currentSessionId, lessonName, questionId: null });
     show("questionArea");
     $("lessonTitle").textContent = lessonName;
     $("headerLesson").textContent = lessonName;
@@ -956,29 +1009,48 @@
   }
 
   $("questionSelect").addEventListener("change", e => {
+    if (e.isTrusted) e.target.blur();   // so the arrow keys work straight after choosing
     stopCollecting();
     if (e.target.value) startCollecting(e.target.value);
-    else { $("responseArea").hidden = true; $("qbig").hidden = true; $("headerQ").hidden = true; $("liveIndicator").hidden = true; $("toggleButton").disabled = true; }
+    else { saveNav({ questionId: null }); $("responseArea").hidden = true; $("qbig").hidden = true; $("headerQ").hidden = true; $("liveIndicator").hidden = true; $("toggleButton").disabled = true; }
   });
 
   function stepQuestion(dir) {
     const sel = $("questionSelect");
     const next = sel.selectedIndex + dir;
-    if (next < 1 || next >= sel.options.length) return;
+    if (next < 1 || next >= sel.options.length) return false;
     sel.selectedIndex = next;
     sel.dispatchEvent(new Event("change"));
+    return true;
   }
-  $("prevQ").addEventListener("click", () => stepQuestion(-1));
-  $("nextQ").addEventListener("click", () => stepQuestion(1));
+
+  function setReveal(v) { revealed = v; applyReveal(); render(); }
+
+  // Two-step: click 1 shows the question alone, click 2 reveals the answers, click 3 moves to the next question.
+  // Going back undoes it: reveal -> question only -> previous question's answers.
+  function advance(dir) {
+    if (twoStep && currentQuestionId && !gridOpen) {
+      if (dir > 0 && !revealed) { setReveal(true); return; }
+      if (dir < 0 && revealed) { setReveal(false); return; }
+    }
+    if (stepQuestion(dir) && twoStep && dir < 0) setReveal(true);
+  }
+  $("prevQ").addEventListener("click", () => advance(-1));
+  $("nextQ").addEventListener("click", () => advance(1));
+  $("flowButton").addEventListener("click", () => {
+    twoStep = !twoStep;
+    $("flowButton").textContent = "Two-step: " + (twoStep ? "On" : "Off");
+  });
 
   /* ---------- Automatic collection ---------- */
   function startCollecting(questionId) {
     currentQuestionId = questionId;
+    saveNav({ questionId });
     currentResponses = [];
     seenKeys = new Set();
     lastSignature = "";
     activeFilter = null;
-    revealed = true;
+    revealed = !twoStep;
     $("toggleButton").textContent = "Hide responses";
     $("toggleButton").disabled = false;
     const opt = $("questionSelect").selectedOptions[0];
@@ -1007,6 +1079,7 @@
   }
 
   function stopCollecting() {
+    closeGrid(false);
     clearInterval(pollTimer);
     clearTimeout(rtTimer);
     pollTimer = null;
@@ -1050,7 +1123,7 @@
     $("toggleButton").textContent = revealed ? "Hide responses" : "Show responses";
   }
 
-  $("toggleButton").addEventListener("click", () => { revealed = !revealed; applyReveal(); });
+  $("toggleButton").addEventListener("click", () => setReveal(!revealed));
 
   function effectiveDensity(n) {
     if (densityMode !== "auto") return densityMode;
@@ -1082,7 +1155,7 @@
     if (activeFilter !== null && !groups.has(activeFilter)) activeFilter = null;
     box.innerHTML = "";
     // A tally only helps once there are enough answers to compare.
-    if (list.length < 5) { box.hidden = true; return; }
+    if (list.length < 5 || !revealed) { box.hidden = true; return; }
     box.hidden = false;
     [...groups.values()].sort((a, b) => b.n - a.n || a.text.localeCompare(b.text, undefined, { numeric: true })).forEach(g => {
       const chip = document.createElement("button");
@@ -1138,7 +1211,7 @@
     }
 
     list.forEach(({ r, n: num, key }) => {
-      const name = r.student_name || ("Student " + num);
+      const name = namesHidden ? "Student " + num : (r.student_name || ("Student " + num));
 
       const card = document.createElement("article");
       card.className = "response";
@@ -1170,6 +1243,117 @@
       box.appendChild(card);
     });
   }
+
+  /* ---------- Names, progress grid and keyboard ---------- */
+  function toggleNames() {
+    namesHidden = !namesHidden;
+    $("namesButton").textContent = "Names: " + (namesHidden ? "Hidden" : "Shown");
+    lastGridSig = "";
+    render();
+    if (gridOpen) fetchGrid();
+  }
+  $("namesButton").addEventListener("click", toggleNames);
+
+  function closeGrid(restore) {
+    clearInterval(gridTimer); gridTimer = null; gridOpen = false;
+    $("gridArea").hidden = true;
+    $("gridButton").textContent = "Progress grid";
+    if (restore && currentQuestionId) { $("responseArea").hidden = false; $("qbig").hidden = false; }
+  }
+  function toggleGrid() {
+    if (gridOpen) { closeGrid(true); return; }
+    if (!currentSessionId) return;
+    gridOpen = true; lastGridSig = "";
+    $("gridButton").textContent = "Back to cards";
+    $("responseArea").hidden = true; $("qbig").hidden = true; $("gridArea").hidden = false;
+    fetchGrid();
+    gridTimer = setInterval(fetchGrid, POLL_MS);
+  }
+  $("gridButton").addEventListener("click", toggleGrid);
+
+  async function fetchGrid() {
+    const { data, error } = await supabaseClient.from("responses")
+      .select("student_id, student_name, question_id, answer, submitted_at")
+      .eq("session_id", currentSessionId).order("submitted_at").range(0, 4999);
+    if (error || !gridOpen) return;
+    const sig = JSON.stringify(data) + namesHidden + currentQuestionId;
+    if (sig === lastGridSig) return;
+    lastGridSig = sig;
+    renderGrid(data);
+  }
+
+  function renderGrid(data) {
+    const qs = [...$("questionSelect").options].filter(o => o.value)
+      .map((o, i) => ({ id: o.value, label: o.dataset.label || String(i + 1) }));
+    const students = new Map();
+    data.forEach((r, i) => {
+      const k = r.student_id || r.student_name || ("row" + i);
+      let st = students.get(k);
+      if (!st) { st = { name: "", first: r.submitted_at || "", done: new Map() }; students.set(k, st); }
+      if (r.student_name) st.name = r.student_name;
+      if (r.submitted_at && r.submitted_at < st.first) st.first = r.submitted_at;
+      const a = clean(r.answer);
+      if (a) st.done.set(r.question_id, a); else st.done.delete(r.question_id);   // latest answer wins
+    });
+    const list = [...students.values()].sort((a, b) => (a.first < b.first ? -1 : a.first > b.first ? 1 : 0));
+    list.forEach((st, i) => { st.rank = i + 1; });
+    if (!namesHidden) list.sort((a, b) => (a.name || "~").localeCompare(b.name || "~", undefined, { sensitivity: "base" }));
+
+    const box = $("gridArea");
+    const old = box.querySelector(".gridwrap");
+    const top = old ? old.scrollTop : 0, left = old ? old.scrollLeft : 0;
+    box.innerHTML = "";
+    if (!list.length) {
+      const e = document.createElement("div");
+      e.className = "empty-state"; e.textContent = "No responses to this lesson yet.";
+      box.appendChild(e); return;
+    }
+    const wrap = document.createElement("div"); wrap.className = "gridwrap";
+    const t = document.createElement("table"); t.className = "pgrid";
+    const hr = t.createTHead().insertRow();
+    const th0 = document.createElement("th"); th0.className = "nm"; th0.textContent = list.length + " students"; hr.appendChild(th0);
+    qs.forEach(q => {
+      const th = document.createElement("th");
+      if (q.id === currentQuestionId) th.className = "cur";
+      const n = list.filter(st => st.done.has(q.id)).length;
+      const sm = document.createElement("small"); sm.textContent = n + "/" + list.length;
+      th.append(q.label, sm);
+      th.title = "Open question " + q.label;
+      th.addEventListener("click", () => { const sel = $("questionSelect"); sel.value = q.id; sel.dispatchEvent(new Event("change")); });
+      hr.appendChild(th);
+    });
+    const thT = document.createElement("th"); thT.textContent = "Done"; hr.appendChild(thT);
+    const body = t.createTBody();
+    list.forEach(st => {
+      const tr = body.insertRow();
+      const nm = tr.insertCell(); nm.className = "nm";
+      nm.textContent = namesHidden ? "Student " + st.rank : (st.name || "Student " + st.rank);
+      qs.forEach(q => {
+        const td = tr.insertCell(); const a = st.done.get(q.id);
+        td.className = "c" + (a ? " done" : "");
+        if (a && !namesHidden) td.title = a.length > 80 ? a.slice(0, 80) + "…" : a;
+      });
+      const tot = tr.insertCell(); tot.className = "tot";
+      tot.textContent = qs.filter(q => st.done.has(q.id)).length + "/" + qs.length;
+    });
+    wrap.appendChild(t); box.appendChild(wrap);
+    wrap.scrollTop = top; wrap.scrollLeft = left;
+  }
+
+  // Keyboard: ← / → (or Page Up / Page Down, as most clickers send) change question, H hides or shows responses, N hides or shows names, G opens the progress grid.
+  document.addEventListener("keydown", e => {
+    if ($("questionArea").hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    const k = e.key.toLowerCase();
+    if (e.key === "ArrowRight" || e.key === "PageDown") advance(1);
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") advance(-1);
+    else if (k === "h") { if (!$("toggleButton").disabled) $("toggleButton").click(); }
+    else if (k === "n") toggleNames();
+    else if (k === "g") toggleGrid();
+    else return;
+    e.preventDefault();
+  });
 
   /* ---------- Navigation ---------- */
   $("backToClasses").addEventListener("click", loadClasses);
