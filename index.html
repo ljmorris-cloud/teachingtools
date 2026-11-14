@@ -129,6 +129,16 @@
     box-shadow: 0 0 0 5px rgba(63,224,245,.08);
   }
   #pickButton { margin-left: auto; font-weight: 800; }
+  #chinBtn { font-weight: 800; }
+  #chinOverlay { position: fixed; inset: 0; z-index: 210; background: rgba(8,4,24,.97); display: flex; flex-direction: column; padding: 18px; }
+  #chinOverlay[hidden], #chinBoard[hidden], #chinNum[hidden] { display: none; }
+  #chinNum { margin: auto; font-size: 45vmin; font-weight: 900; color: var(--yellow); line-height: 1; }
+  #chinBoard { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+  #chinGrid { flex: 1; min-height: 0; display: grid; gap: 14px; overflow: auto; }
+  .chin-tile { background: var(--panel); border: 2px solid var(--line); border-radius: 18px; padding: 14px 18px; display: flex; flex-direction: column; min-height: 120px; min-width: 0; }
+  .chin-name { color: var(--cyan); font-weight: 800; font-size: 1.15rem; }
+  .chin-text { flex: 1; min-height: 0; overflow: hidden; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; white-space: pre-wrap; margin-top: 6px; }
+  .chin-bar { display: flex; gap: 12px; justify-content: center; }
   #pickOverlay {
     position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center;
     background: rgba(8,4,24,.9); padding: 20px; overflow-y: auto;
@@ -454,6 +464,7 @@
       <button id="sizeButton" type="button" title="Card size">Size: Auto</button>
       <button id="sortButton" type="button" title="Sort order">Sort: Time</button>
       <button id="toggleButton" disabled>Hide responses</button>
+      <button id="chinBtn" class="primary" type="button" title="Count down 3, 2, 1, then show everyone's responses">Chin It <span id="chinCount"></span></button>
       <button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button>
       <span id="liveIndicator" class="live paused" hidden>Live</span>
     </div>
@@ -470,6 +481,14 @@
     <div id="gridArea" hidden></div>
   </section>
 </main>
+
+<div id="chinOverlay" hidden role="dialog" aria-modal="true" aria-label="Chin It">
+  <div id="chinNum" hidden></div>
+  <div id="chinBoard" hidden>
+    <div id="chinGrid"></div>
+    <div class="chin-bar"><button id="chinNew" class="primary" type="button">New Chin It</button><button id="chinClose" type="button">Close</button></div>
+  </div>
+</div>
 
 <div id="pickOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="pickLabel">
   <div class="pick-card">
@@ -551,6 +570,7 @@
 
   function show(areaId) {
     ["classArea", "lessonArea", "questionArea"].forEach(id => { $(id).hidden = id !== areaId; });
+    if (areaId === "questionArea") chinEnsure();
     $("headerLesson").hidden = areaId !== "questionArea";
     if (areaId !== "questionArea") $("headerQ").hidden = true;
   }
@@ -678,6 +698,7 @@
     box.innerHTML = "";
     if (!data.length) { box.textContent = "No lessons found yet. Create your first lesson above."; return; }
     data.forEach(lesson => {
+      lessonTokens[lesson.id] = lesson.access_token;
       const card = document.createElement("div");
       card.className = "card";
       const badge = document.createElement("span");
@@ -1647,6 +1668,114 @@
   }
 
   // Keyboard: ← / → (or Page Up / Page Down, as most clickers send) change question, H hides or shows responses, N hides or shows names, G opens the progress grid.
+  /* ---------- Chin It: students submit, you count down 3-2-1 and show everyone's response at once. Nothing is saved. ---------- */
+  // Uses a live Supabase Realtime channel only. Responses live in this page's memory and are gone when you close it.
+  const lessonTokens = {};
+  let chin = null, chinBusy = false;
+  const chinSend = (me, event, payload) => me.ch.send({ type: "broadcast", event, payload });
+  const chinState = me => chinSend(me, "state", { phase: me.phase, round: me.round });
+  function chinCount() { $("chinCount").textContent = chin && chin.subs.size ? "(" + chin.subs.size + ")" : ""; }
+
+  async function chinEnsure() {
+    const sid = currentSessionId;
+    if (!sid) return;
+    let token = lessonTokens[sid];
+    if (!token) {
+      const { data } = await supabaseClient.from("sessions").select("access_token").eq("id", sid).single();
+      token = data && data.access_token;
+      if (token) lessonTokens[sid] = token;
+    }
+    if (!token || (chin && chin.token === token)) return;
+    if (chin) supabaseClient.removeChannel(chin.ch);
+    const ch = supabaseClient.channel("chinit:" + token, { config: { broadcast: { self: false } } });
+    const me = chin = { token, ch, round: Date.now(), phase: "open", subs: new Map(), claims: new Set() };
+    ch.on("broadcast", { event: "hello" }, () => chinState(me))
+      .on("broadcast", { event: "submit" }, ({ payload }) => chinSubmit(me, payload || {}))
+      .subscribe();
+    chinCount();
+  }
+
+  async function chinClaims(me) {
+    let { data, error } = await supabaseClient.rpc("teacher_list_lesson_claims", { p_session_id: currentSessionId });
+    if (isMissingFn(error)) ({ data, error } = await supabaseClient.from("name_claims").select("student_id").eq("session_id", currentSessionId));
+    if (!error) me.claims = new Set((data || []).map(c => c.student_id));
+  }
+
+  async function chinSubmit(me, p) {
+    const ack = (ok, reason) => chinSend(me, "ack", { nonce: p.nonce, ok, reason });
+    const text = String(p.text || "").trim().slice(0, 300);
+    if (!text) return ack(false, "empty");
+    if (me.phase !== "open") return ack(false, "closed");
+    let key, name;
+    if (rosterRows.length) {            // same names as the worksheet: the student must hold that name in this lesson
+      const row = rosterRows.find(r => r.id === p.sid);
+      if (!row) return ack(false, "name");
+      if (!me.claims.has(row.id)) { await chinClaims(me); if (!me.claims.has(row.id)) return ack(false, "name"); }
+      key = row.id; name = row.name;
+    } else {                            // class with no list: typed first name, as in the worksheet
+      name = String(p.name || "").trim().split(/\s+/)[0].slice(0, 40);
+      if (!name) return ack(false, "name");
+      key = "n:" + name.toLowerCase();
+    }
+    if (me.phase !== "open") return ack(false, "closed");
+    me.subs.set(key, { name, text });
+    chinCount();
+    ack(true);
+  }
+
+  function chinFit(tile) {
+    const t = tile.querySelector(".chin-text");
+    for (let size = 96; size > 14; size -= 4) { t.style.fontSize = size + "px"; if (t.scrollHeight <= t.clientHeight && t.scrollWidth <= t.clientWidth) break; }
+  }
+  function chinBoard(me) {
+    const items = [...me.subs.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const cols = Math.max(1, Math.min(items.length, Math.ceil(Math.sqrt(items.length * 1.7))));
+    const grid = $("chinGrid");
+    grid.textContent = "";
+    grid.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+    grid.style.gridAutoRows = "minmax(120px, 1fr)";
+    items.forEach(it => {
+      const tile = document.createElement("div"); tile.className = "chin-tile";
+      const n = document.createElement("div"); n.className = "chin-name"; n.textContent = it.name;
+      const t = document.createElement("div"); t.className = "chin-text"; t.textContent = it.text;
+      tile.append(n, t); grid.appendChild(tile);
+    });
+    $("chinBoard").hidden = false;
+    grid.querySelectorAll(".chin-tile").forEach(chinFit);
+  }
+
+  async function chinGo() {
+    await chinEnsure();
+    const me = chin;
+    if (!me || chinBusy) return;
+    if (!me.subs.size) {
+      const b = $("chinBtn"), old = b.innerHTML; b.textContent = "No responses yet";
+      setTimeout(() => { b.innerHTML = old; chinCount(); }, 2000); return;
+    }
+    chinBusy = true;
+    $("chinOverlay").hidden = false; $("chinBoard").hidden = true;
+    me.phase = "countdown"; chinState(me);
+    for (const n of [3, 2, 1]) {
+      $("chinNum").hidden = false; $("chinNum").textContent = n;
+      await new Promise(r => setTimeout(r, 1000));
+      if ($("chinOverlay").hidden) { me.phase = "open"; chinState(me); chinBusy = false; return; }   // cancelled with Esc
+    }
+    $("chinNum").hidden = true;
+    me.phase = "revealed"; chinState(me);
+    chinBoard(me);
+    chinBusy = false;
+  }
+  function chinClose() {
+    $("chinOverlay").hidden = true;
+  }
+  $("chinBtn").addEventListener("click", chinGo);
+  $("chinClose").addEventListener("click", chinClose);
+  $("chinNew").addEventListener("click", () => {
+    const me = chin; if (!me) return;
+    me.subs.clear(); me.round = Date.now(); me.phase = "open"; chinState(me); chinCount(); chinClose();
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("chinOverlay").hidden) { e.preventDefault(); chinClose(); } });
+
   /* ---------- Pick a student (a non-volunteer) ---------- */
   // Picks at random from this class's list, instantly, using the list already on screen.
   const PICK_OPTS_KEY = "dash-pick-options";
