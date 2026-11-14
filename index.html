@@ -52,6 +52,13 @@
     background: linear-gradient(90deg, var(--yellow), var(--pink));
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
+  .top-left { display: flex; align-items: center; gap: 22px; min-width: 0; flex-wrap: wrap; }
+  .header-lesson {
+    font-size: 1.7rem; font-weight: 800; letter-spacing: -.02em; color: var(--ink);
+    padding-left: 22px; border-left: 3px solid var(--line); line-height: 1.1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw;
+  }
+  #lessonTitle { display: none; }   /* the lesson name now lives in the header bar */
   #userBar { display: none; align-items: center; gap: 14px; color: var(--muted); }
   main { max-width: 1700px; margin: 0 auto; padding: 40px 48px 100px; }
   h2 { font-size: 3rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; margin: 0 0 8px; }
@@ -136,9 +143,23 @@
   @keyframes pulse { 50% { opacity: .25; transform: scale(.8); } }
   @media (prefers-reduced-motion: reduce) { .live::before { animation: none; } }
 
+  /* The question, large enough to read from the back of the room */
+  .qbig {
+    margin: 4px 0 6px; padding: 24px 34px 30px; background: var(--panel);
+    border: 2px solid var(--line); border-left: 12px solid var(--yellow);
+    border-radius: var(--radius); box-shadow: 0 0 0 5px rgba(255,210,63,.07);
+  }
+  .qbig-num {
+    display: inline-block; background: var(--yellow); color: var(--dark); font-weight: 800;
+    font-size: 1.2rem; padding: 4px 16px; border-radius: 99px; margin-bottom: 12px;
+  }
+  .qbig-text {
+    margin: 0; font-size: clamp(2rem, 3.6vw, 3.6rem); font-weight: 800; line-height: 1.12;
+    letter-spacing: -.025em; overflow-wrap: anywhere; white-space: pre-wrap;
+  }
   .rhead { display: flex; align-items: baseline; gap: 22px; margin: 36px 0 22px; }
   .count {
-    font-size: 8rem; font-weight: 800; line-height: .9; letter-spacing: -.05em;
+    font-size: 5.5rem; font-weight: 800; line-height: .9; letter-spacing: -.05em;
     background: linear-gradient(135deg, var(--yellow), var(--pink) 60%, var(--violet));
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
@@ -169,8 +190,8 @@
   /* ---- Class-size scaling: cards shrink automatically as more students answer ---- */
   .qbar { position: sticky; top: 10px; z-index: 20; }
   .rhead.small { margin: 14px 0 12px; gap: 14px; }
-  .rhead.small .count { font-size: 4.5rem; }
-  .rhead.small .count-label { font-size: 1.4rem; }
+  .rhead.small .count { font-size: 3.5rem; }
+  .rhead.small .count-label { font-size: 1.3rem; }
 
   .responses.d-medium { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
   .responses.d-medium .response { padding: 16px 18px 18px; gap: 10px; border-radius: 18px; box-shadow: 0 8px 22px rgba(0,0,0,.38); }
@@ -286,7 +307,7 @@
 <body>
 
 <header class="top">
-  <h1>Year 8 Teacher Dashboard</h1>
+  <div class="top-left"><h1>Year 8 Teacher Dashboard</h1><span id="headerLesson" class="header-lesson" hidden></span></div>
   <div id="userBar"><span id="userEmail"></span><button id="logoutButton">Log out</button></div>
 </header>
 
@@ -355,6 +376,7 @@
     </div>
 
     <div id="responseArea" hidden>
+      <div class="qbig"><span class="qbig-num" id="qBigNum"></span><p class="qbig-text" id="qBigText"></p></div>
       <div class="rhead" id="rhead">
         <span class="count" id="countNumber">0</span>
         <span class="count-label" id="countLabel">responses</span>
@@ -407,6 +429,7 @@
 
   function show(areaId) {
     ["classArea", "lessonArea", "questionArea"].forEach(id => { $(id).hidden = id !== areaId; });
+    $("headerLesson").hidden = areaId !== "questionArea";
   }
 
   /* ---------- Auth ---------- */
@@ -820,6 +843,8 @@
     stopCollecting();
     show("questionArea");
     $("lessonTitle").textContent = lessonName;
+    $("headerLesson").textContent = lessonName;
+    $("headerLesson").title = lessonName;
     $("responseArea").hidden = true;
     $("liveIndicator").hidden = true;
     $("toggleButton").disabled = true;
@@ -893,6 +918,17 @@
         sel.appendChild(group);
       });
     }
+    tagOptions();
+  }
+
+  function tagOptions() {
+    // Options read "1.1   Question text". Keep the two halves so the big display can show them separately.
+    [...$("questionSelect").options].forEach(o => {
+      if (!o.value) return;
+      const i = o.textContent.indexOf("   ");
+      o.dataset.label = i > 0 ? o.textContent.slice(0, i).trim() : "";
+      o.dataset.text = i > 0 ? o.textContent.slice(i).trim() : o.textContent.trim();
+    });
   }
 
   $("questionSelect").addEventListener("change", e => {
@@ -921,6 +957,10 @@
     revealed = true;
     $("toggleButton").textContent = "Hide responses";
     $("toggleButton").disabled = false;
+    const opt = $("questionSelect").selectedOptions[0];
+    const label = opt && opt.dataset.label ? opt.dataset.label : "";
+    $("qBigNum").textContent = !label ? "Question" : /^question/i.test(label) ? label : "Question " + label;
+    $("qBigText").textContent = opt && opt.dataset.text ? opt.dataset.text : "";
     $("responseArea").hidden = false;
     $("responses").innerHTML = "";
     $("liveIndicator").hidden = false;
