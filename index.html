@@ -96,7 +96,8 @@
   #login input:focus { border-color: var(--cyan); outline: none; }
   #login button { width: 100%; margin-top: 8px; padding: 15px; font-size: 1.1rem; }
 
-  #status { color: var(--muted); min-height: 1.5em; margin-bottom: 18px; }
+  #status { color: var(--muted); margin: 0 0 12px; }
+  #status:empty { display: none; }
   #status.error { color: var(--pink); font-weight: 600; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 22px; }
@@ -511,7 +512,25 @@
       b.className = "primary";
       b.textContent = "Open class";
       b.addEventListener("click", () => { currentClassId = item.id; loadLessons(item.name); });
-      card.append(h, b);
+      const rn = document.createElement("button");
+      rn.className = "small-button";
+      rn.type = "button";
+      rn.textContent = "Rename";
+      rn.addEventListener("click", async () => {
+        const name = (prompt("Rename class:", item.name) || "").trim();
+        if (!name || name === item.name) return;
+        setStatus("Renaming class...");
+        const { data: updated, error: err } = await supabaseClient
+          .from("classes").update({ name }).eq("id", item.id).select("id");
+        if (err) { setStatus("Could not rename class: " + err.message, true); return; }
+        if (!updated || !updated.length) {
+          setStatus("The database did not allow this rename (no permission to edit classes). Rename it in Supabase instead.", true);
+          return;
+        }
+        setStatus("");
+        loadClasses();
+      });
+      card.append(h, b, rn);
       box.appendChild(card);
     });
   }
