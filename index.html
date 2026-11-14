@@ -1740,6 +1740,7 @@
     $("chinBoard").hidden = false;
   }
 
+  const CHIN_TICK_MS = 600;   // time each number (3, 2, 1) stays on screen; was 1000
   async function chinGo() {
     await chinEnsure();
     const me = chin;
@@ -1753,15 +1754,17 @@
     me.phase = "countdown"; chinState(me);
     for (const n of [3, 2, 1]) {
       $("chinNum").hidden = false; $("chinNum").textContent = n;
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, CHIN_TICK_MS));
       if ($("chinOverlay").hidden) { me.phase = "open"; chinState(me); chinBusy = false; return; }   // cancelled with Esc
     }
     $("chinNum").hidden = true;
-    me.phase = "revealed"; chinState(me);
-    chinBoard(me);
+    chinBoard(me);   // draw the board from the responses collected so far
+    // Students unlock straight away: start a fresh round for the next Chin It. The board stays on screen until you close it.
+    me.subs.clear(); me.round = Date.now(); chinCount();
+    me.phase = "open"; chinState(me);
     chinBusy = false;
   }
-  // Closing the board ends that Chin It: students unlock, and the next one starts fresh.
+  // Closing the board just hides it. Students were already unlocked (with a fresh round) when the answers were revealed.
   // (If you cancel during the 3-2-1, the responses are kept.)
   function chinClose() {
     $("chinOverlay").hidden = true;
