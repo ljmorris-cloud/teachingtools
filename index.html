@@ -376,6 +376,7 @@
         <textarea id="rosterText" style="min-height:105px" placeholder="One name per line, e.g.&#10;Ava Nguyen&#10;Liam Brown&#10;Mia T."></textarea>
         <div class="manage-actions"><button class="primary" type="submit">Add names</button></div>
       </form>
+      <p id="rosterMsg" role="status" style="margin:12px 0 0;font-weight:600" hidden></p>
       <details style="margin-top:14px"><summary style="cursor:pointer;font-weight:700">Show or edit the list</summary><div id="rosterList" style="margin-top:10px"></div></details>
     </div>
     <div id="lessons" class="grid"></div>
@@ -752,21 +753,46 @@
   let rosterRows = [];
   let rosterReady = true;
 
+  // True only when the tables are genuinely missing. A permission or row-level-security error also
+  // names the table, so it must not be mistaken for "not set up".
   function noRosterTables(err) {
-    return err && /class_students|name_claims|relation|does not exist|schema cache/i.test(err.message || "");
+    const m = (err && err.message) || "";
+    if (/permission denied|row-level security|violates/i.test(m)) return false;
+    return /does not exist|could not find the table|schema cache/i.test(m);
+  }
+
+  // Show a message next to the class list, where the teacher is looking.
+  function rosterSay(msg, isError) {
+    const el = $("rosterMsg");
+    el.textContent = msg || "";
+    el.hidden = !msg;
+    el.style.color = isError ? "var(--pink)" : "var(--lime, #b6f23a)";
+  }
+  // The teacher functions (teacher-class-list-functions.sql) may not be installed yet; then fall back to direct table access.
+  const isMissingFn = err => !!err && (err.code === "PGRST202" || /could not find the function|function .* does not exist/i.test(err.message || ""));
+  function rosterErrorText(action, err) {
+    const m = (err && err.message) || "unknown error";
+    const hint = /permission denied|row-level security/i.test(m)
+      ? " The database is refusing the request. Run teacher-class-list-functions.sql in the Supabase SQL Editor, then reload this page."
+      : "";
+    return action + ": " + m + "." + hint;
   }
 
   async function loadRoster() {
     if (!currentClassId) return;
-    const { data, error } = await supabaseClient.from("class_students")
-      .select("id, name").eq("class_id", currentClassId).order("name");
+    let { data, error } = await supabaseClient.rpc("teacher_list_class_students", { p_class_id: currentClassId });
+    if (isMissingFn(error)) {
+      ({ data, error } = await supabaseClient.from("class_students")
+        .select("id, name").eq("class_id", currentClassId).order("name"));
+    }
     if (error) {
       rosterReady = !noRosterTables(error);
       $("rosterSetup").hidden = rosterReady;
-      if (rosterReady) setStatus("Could not load the class list: " + error.message, true);
+      if (rosterReady) rosterSay(rosterErrorText("Could not load the class list", error), true);
       rosterRows = [];
     } else {
       rosterReady = true; $("rosterSetup").hidden = true; rosterRows = data || [];
+      if ($("rosterMsg").style.color && /Could not load/.test($("rosterMsg").textContent)) rosterSay("");
     }
     $("rosterCount").textContent = rosterRows.length ? "(" + rosterRows.length + " students)" : "(none yet: students will type their first name)";
     const box = $("rosterList");
@@ -793,29 +819,39 @@
     const names = $("rosterText").value.split(/\r?\n/)
       .map(l => l.replace(/\s+/g, " ").trim().replace(/^(?:\d+\s*[.):\-]\s*|[-*•]\s+)/, "").trim().slice(0, 40))
       .filter(n => { const k = n.toLowerCase(); if (!n || have.has(k) || seen.has(k)) return false; seen.add(k); return true; });
-    if (!names.length) { setStatus("No new names to add (blank lines and names already on the list are skipped).", true); return; }
-    if (names.length > 100) { setStatus("That is a lot of names at once (" + names.length + "). Add up to 100 at a time.", true); return; }
+    if (!names.length) { rosterSay("No new names to add. Blank lines and names already on the list are skipped.", true); return; }
+    if (names.length > 100) { rosterSay("That is a lot of names at once (" + names.length + "). Add up to 100 at a time.", true); return; }
     const button = e.submitter; if (button) button.disabled = true;
-    const { error } = await supabaseClient.from("class_students")
-      .insert(names.map(name => ({ class_id: currentClassId, name })));
+    rosterSay("Adding " + names.length + " name" + (names.length === 1 ? "" : "s") + "...");
+    let added = names.length;
+    let { data: addedCount, error } = await supabaseClient.rpc("teacher_add_class_students",
+      { p_class_id: currentClassId, p_names: names });
+    if (isMissingFn(error)) {
+      ({ error } = await supabaseClient.from("class_students")
+        .insert(names.map(name => ({ class_id: currentClassId, name }))));
+    } else if (!error && typeof addedCount === "number") {
+      added = addedCount;
+    }
     if (button) button.disabled = false;
     if (error) {
-      if (noRosterTables(error)) { $("rosterSetup").hidden = false; setStatus("Class lists aren't set up in the database yet.", true); }
-      else setStatus("Could not add names: " + error.message, true);
+      if (noRosterTables(error)) { $("rosterSetup").hidden = false; rosterSay("Class lists aren't set up in the database yet.", true); }
+      else rosterSay(rosterErrorText("Could not add names", error), true);
       return;
     }
     $("rosterText").value = "";
-    setStatus(names.length + " name" + (names.length === 1 ? "" : "s") + " added to the class list.");
     await loadRoster();
+    rosterSay(added + " name" + (added === 1 ? "" : "s") + " added to the class list.");
+    const details = $("rosterList").closest("details"); if (details) details.open = true;
     if (managedLesson) loadClaims();
   });
 
   async function removeStudent(row) {
     if (!confirm("Remove \"" + row.name + "\" from the class list?\n\nTheir name will no longer appear in lessons for this class. Answers they already submitted stay as they are.")) return;
-    const { error } = await supabaseClient.from("class_students").delete().eq("id", row.id);
-    if (error) { setStatus("Could not remove the name: " + error.message, true); return; }
-    setStatus("Removed " + row.name + ".");
+    let { error } = await supabaseClient.rpc("teacher_remove_class_student", { p_student_id: row.id });
+    if (isMissingFn(error)) ({ error } = await supabaseClient.from("class_students").delete().eq("id", row.id));
+    if (error) { rosterSay(rosterErrorText("Could not remove the name", error), true); return; }
     await loadRoster();
+    rosterSay("Removed " + row.name + ".");
     if (managedLesson) loadClaims();
   }
 
@@ -825,8 +861,11 @@
     if (!managedLesson) return;
     box.textContent = "Loading...";
     if (!rosterRows.length) { $("claimCount").textContent = ""; box.textContent = "This class has no class list, so students type their first name."; return; }
-    const { data, error } = await supabaseClient.from("name_claims")
-      .select("student_id, claimed_at").eq("session_id", managedLesson.id);
+    let { data, error } = await supabaseClient.rpc("teacher_list_lesson_claims", { p_session_id: managedLesson.id });
+    if (isMissingFn(error)) {
+      ({ data, error } = await supabaseClient.from("name_claims")
+        .select("student_id, claimed_at").eq("session_id", managedLesson.id));
+    }
     if (error) { box.textContent = noRosterTables(error) ? "Class lists aren't set up in the database yet." : "Could not load names: " + error.message; return; }
     const claimed = new Map((data || []).map(c => [c.student_id, c.claimed_at]));
     $("claimCount").textContent = "(" + claimed.size + " of " + rosterRows.length + " students)";
@@ -855,8 +894,12 @@
   async function releaseName(row) {
     if (!managedLesson) return;
     if (!confirm("Release \"" + row.name + "\"?\n\nWhoever holds the name will be asked to choose again. Answers already submitted stay under this name.")) return;
-    const { error } = await supabaseClient.from("name_claims").delete()
-      .eq("session_id", managedLesson.id).eq("student_id", row.id);
+    let { error } = await supabaseClient.rpc("teacher_release_name",
+      { p_session_id: managedLesson.id, p_student_id: row.id });
+    if (isMissingFn(error)) {
+      ({ error } = await supabaseClient.from("name_claims").delete()
+        .eq("session_id", managedLesson.id).eq("student_id", row.id));
+    }
     if (error) { setStatus("Could not release the name: " + error.message, true); return; }
     setStatus("Released " + row.name + ".");
     loadClaims();
