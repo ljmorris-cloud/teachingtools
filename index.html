@@ -166,6 +166,44 @@
     white-space: pre-wrap; overflow-wrap: anywhere;
   }
   .answer.empty { opacity: .6; font-weight: 500; font-style: italic; font-size: 1.4rem; }
+  /* ---- Class-size scaling: cards shrink automatically as more students answer ---- */
+  .qbar { position: sticky; top: 10px; z-index: 20; }
+  .rhead.small { margin: 14px 0 12px; gap: 14px; }
+  .rhead.small .count { font-size: 4.5rem; }
+  .rhead.small .count-label { font-size: 1.4rem; }
+
+  .responses.d-medium { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .responses.d-medium .response { padding: 16px 18px 18px; gap: 10px; border-radius: 18px; box-shadow: 0 8px 22px rgba(0,0,0,.38); }
+  .responses.d-medium .avatar { width: 36px; height: 36px; font-size: 1.05rem; }
+  .responses.d-medium .name { font-size: 1.15rem; }
+  .responses.d-medium .time { font-size: .8rem; }
+  .responses.d-medium .answer { font-size: 1.7rem; }
+
+  .responses.d-compact { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .responses.d-compact .response { padding: 10px 12px 12px; gap: 6px; border-radius: 14px; box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+  .responses.d-compact .who { gap: 8px; min-width: 0; }
+  .responses.d-compact .avatar { width: 26px; height: 26px; font-size: .8rem; }
+  .responses.d-compact .name { font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .responses.d-compact .time { display: none; }
+  .responses.d-compact .answer { font-size: 1.35rem; }
+
+  /* Long answers are clamped in the smaller layouts. Click a card to open it fully. */
+  .responses:not(.d-large) .response { cursor: pointer; }
+  .responses:not(.d-large) .answer:not(.open) {
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .response.dim { opacity: .15; filter: saturate(.4); }
+
+  .tally { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 20px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 10px; max-width: 100%;
+    padding: 5px 6px 5px 16px; border-radius: 99px; font-size: 1.15rem; font-weight: 800;
+  }
+  .chip .chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+  .chip .chip-n { background: var(--yellow); color: var(--dark); border-radius: 99px; padding: 2px 12px; font-size: 1rem; }
+  .chip.blank .chip-text { font-style: italic; opacity: .7; }
+  .chip.active { border-color: var(--yellow); background: var(--panel2); box-shadow: 0 0 0 3px rgba(255,210,63,.25); }
+
   .empty-state {
     grid-column: 1 / -1; text-align: center; padding: 80px 20px;
     border: 3px dashed var(--line); border-radius: var(--radius);
@@ -294,19 +332,7 @@
       <div class="key-line"><span class="key-value" id="lessonAccessKey"></span><button class="small-button" id="copyAccessKey" type="button">Copy key</button></div>
       <h3>Sync WE DO questions from the worksheet</h3>
       <p>The worksheet is the only place WE DO questions are written. Choose the worksheet file and this lesson's questions are brought into line with it. You will see what will be added, kept and removed before anything changes. Re-sync any time you edit the worksheet's questions.</p>
-      <div class="manage-form" style="margin-bottom:10px">
-        <input id="worksheetUrl" type="url" placeholder="Worksheet web address, e.g. https://your-project.vercel.app/rgb.html" autocomplete="off">
-        <div class="manage-actions"><button class="primary" type="button" id="syncUrlBtn">Sync from web address</button><button type="button" id="importWorksheetBtn">…or choose a file</button><input type="file" id="importWorksheetFile" accept=".html,.htm,text/html" hidden></div>
-      </div>
-      <details style="margin:0 0 10px;color:var(--muted)"><summary style="cursor:pointer">Fetch blocked or "failed to fetch"? Allow the dashboard to read your worksheets</summary>
-        <p>Browsers only let one website read another if it allows it. If the worksheet is on a different address from this dashboard, add a <code>vercel.json</code> file to the <b>worksheet's</b> Vercel project and redeploy:</p>
-        <pre style="background:var(--dark);padding:12px;border-radius:10px;overflow:auto;color:var(--ink)">{
-  "headers": [
-    { "source": "/(.*)", "headers": [ { "key": "Access-Control-Allow-Origin", "value": "*" } ] }
-  ]
-}</pre>
-        <p>If the dashboard and worksheets are in the same Vercel project, nothing is needed.</p>
-      </details>
+      <div class="manage-actions" style="margin-bottom:10px"><button class="primary" type="button" id="importWorksheetBtn">Sync questions from worksheet…</button><input type="file" id="importWorksheetFile" accept=".html,.htm,text/html" hidden></div>
       <div id="syncPlan" class="manage-panel" style="margin:14px 0" hidden></div>
       <h3 style="margin-top:28px">Questions currently in this lesson</h3>
       <div id="managedQuestions"></div>
@@ -322,15 +348,18 @@
       </select>
       <button id="prevQ" aria-label="Previous question">← Prev</button>
       <button id="nextQ" aria-label="Next question">Next →</button>
+      <button id="sizeButton" type="button" title="Card size">Size: Auto</button>
+      <button id="sortButton" type="button" title="Sort order">Sort: Time</button>
       <button id="toggleButton" disabled>Hide responses</button>
       <span id="liveIndicator" class="live paused" hidden>Live</span>
     </div>
 
     <div id="responseArea" hidden>
-      <div class="rhead">
+      <div class="rhead" id="rhead">
         <span class="count" id="countNumber">0</span>
         <span class="count-label" id="countLabel">responses</span>
       </div>
+      <div id="tally" class="tally" hidden></div>
       <div id="hiddenNotice" class="hidden-state" hidden>Responses are hidden. Students are still submitting.</div>
       <div id="responses" class="responses"></div>
     </div>
@@ -366,6 +395,10 @@
   let channel = null;
   let revealed = true;
   let lastSignature = "";
+  let densityMode = "auto";      // auto | large | medium | compact
+  let sortMode = "time";         // time | name | answer
+  let activeFilter = null;       // normalised answer being highlighted
+  let rtTimer = null;
 
   function setStatus(msg, isError) {
     statusEl.textContent = msg;
@@ -557,8 +590,6 @@
     $("questionManager").hidden = false;
     $("manageLessonTitle").textContent = lesson.worksheet_name;
     $("lessonAccessKey").textContent = lesson.access_token || "Access key unavailable";
-    restoreUrl();
-    syncPlan = null; $("syncPlan").hidden = true;
     $("managedQuestions").textContent = "Loading questions...";
     await loadManagedQuestions();
     $("questionManager").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -594,50 +625,13 @@
     $("importWorksheetFile").click();
   });
 
-  const SYNC_URL_KEY = "dash-worksheet-url:";
-  const urlMemory = () => SYNC_URL_KEY + (managedLesson ? managedLesson.id : "");
-  function restoreUrl() {
-    try { $("worksheetUrl").value = localStorage.getItem(urlMemory()) || ""; } catch (e) { $("worksheetUrl").value = ""; }
-  }
-
   $("importWorksheetFile").addEventListener("change", async e => {
     const file = e.target.files && e.target.files[0];
     if (!file || !managedLesson) return;
-    try { await syncFromText(await file.text(), file.name); }
-    catch (err) { setStatus("Could not sync: " + err.message, true); }
-  });
-
-  $("syncUrlBtn").addEventListener("click", async () => {
-    if (!managedLesson) return;
-    const raw = $("worksheetUrl").value.trim();
-    if (!raw) { setStatus("Paste the worksheet's web address first.", true); return; }
-    let url;
-    try { url = new URL(raw, location.href); if (!/^https?:$/.test(url.protocol)) throw 0; }
-    catch (e) { setStatus("That doesn't look like a web address. It should start with https://", true); return; }
-    $("syncUrlBtn").disabled = true;
-    setStatus("Fetching the worksheet...");
-    try {
-      let res;
-      try { res = await fetch(url.href, { cache: "no-store" }); }
-      catch (netErr) {
-        throw new Error("The browser was blocked from reading " + url.host + ". If the worksheet is on a different address to this dashboard, add the CORS header shown in the instructions (Access-Control-Allow-Origin) to the worksheet's Vercel project, or use the file option.");
-      }
-      if (!res.ok) throw new Error("The address returned an error (" + res.status + "). Check the link opens in your browser.");
-      const text = await res.text();
-      try { localStorage.setItem(urlMemory(), raw); } catch (e) {}
-      await syncFromText(text, url.pathname.split("/").pop() || url.host);
-    } catch (err) {
-      setStatus("Could not sync: " + err.message, true);
-    } finally {
-      $("syncUrlBtn").disabled = false;
-    }
-  });
-
-  async function syncFromText(text, fileName) {
-    if (!managedLesson) return;
     syncPlan = null;
     $("syncPlan").hidden = true;
-    {
+    try {
+      const text = await file.text();
       const doc = new DOMParser().parseFromString(text, "text/html");
       const block = doc.querySelector('script#we-do-questions[type="application/json"]');
       if (!block) throw new Error("This file has no WE DO question list (we-do-questions block).");
@@ -671,10 +665,12 @@
       }
       if (error) throw new Error("Could not read this lesson's questions: " + error.message);
       setStatus("");
-      syncPlan = buildSyncPlan(items, existing || [], fileName);
+      syncPlan = buildSyncPlan(items, existing || [], file.name);
       showSyncPlan();
+    } catch (err) {
+      setStatus("Could not sync: " + err.message, true);
     }
-  }
+  });
 
   // Match each worksheet question to a database row: first by question_code (= worksheet id), then by identical wording
   // (lessons set up before the sync existed). Anything left over is added (worksheet) or removed (database).
@@ -921,6 +917,7 @@
     currentResponses = [];
     seenKeys = new Set();
     lastSignature = "";
+    activeFilter = null;
     revealed = true;
     $("toggleButton").textContent = "Hide responses";
     $("toggleButton").disabled = false;
@@ -939,12 +936,13 @@
       .channel("responses-" + questionId)
       .on("postgres_changes",
         { event: "*", schema: "public", table: "responses", filter: "question_id=eq." + questionId },
-        () => fetchResponses())
+        () => { clearTimeout(rtTimer); rtTimer = setTimeout(fetchResponses, 250); })
       .subscribe();
   }
 
   function stopCollecting() {
     clearInterval(pollTimer);
+    clearTimeout(rtTimer);
     pollTimer = null;
     if (channel) { supabaseClient.removeChannel(channel); channel = null; }
     currentQuestionId = null;
@@ -988,14 +986,71 @@
 
   $("toggleButton").addEventListener("click", () => { revealed = !revealed; applyReveal(); });
 
+  function effectiveDensity(n) {
+    if (densityMode !== "auto") return densityMode;
+    return n <= 8 ? "large" : n <= 18 ? "medium" : "compact";
+  }
+
+  $("sizeButton").addEventListener("click", () => {
+    const modes = ["auto", "large", "medium", "compact"];
+    densityMode = modes[(modes.indexOf(densityMode) + 1) % modes.length];
+    $("sizeButton").textContent = "Size: " + densityMode[0].toUpperCase() + densityMode.slice(1);
+    render();
+  });
+
+  $("sortButton").addEventListener("click", () => {
+    const modes = ["time", "name", "answer"];
+    sortMode = modes[(modes.indexOf(sortMode) + 1) % modes.length];
+    $("sortButton").textContent = "Sort: " + sortMode[0].toUpperCase() + sortMode.slice(1);
+    render();
+  });
+
+  function renderTally(list) {
+    const box = $("tally");
+    const groups = new Map();
+    list.forEach(({ r }) => {
+      const k = norm(r.answer);
+      if (!groups.has(k)) groups.set(k, { key: k, text: clean(r.answer), n: 0 });
+      groups.get(k).n++;
+    });
+    if (activeFilter !== null && !groups.has(activeFilter)) activeFilter = null;
+    box.innerHTML = "";
+    // A tally only helps once there are enough answers to compare.
+    if (list.length < 5) { box.hidden = true; return; }
+    box.hidden = false;
+    [...groups.values()].sort((a, b) => b.n - a.n || a.text.localeCompare(b.text, undefined, { numeric: true })).forEach(g => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip" + (g.key ? "" : " blank") + (g.key === activeFilter ? " active" : "");
+      const t = document.createElement("span");
+      t.className = "chip-text";
+      t.textContent = g.key ? g.text : "No answer";
+      const c = document.createElement("span");
+      c.className = "chip-n";
+      c.textContent = "×" + g.n;
+      chip.append(t, c);
+      chip.title = g.key ? g.text : "No answer entered";
+      chip.addEventListener("click", () => {
+        activeFilter = activeFilter === g.key ? null : g.key;
+        render();
+      });
+      box.appendChild(chip);
+    });
+  }
+
   function render() {
     const n = currentResponses.length;
     $("countNumber").textContent = n;
     $("countLabel").textContent = n === 1 ? "response" : "responses";
 
+    const density = effectiveDensity(n);
+    $("rhead").classList.toggle("small", density !== "large");
+
     const box = $("responses");
+    box.className = "responses d-" + density;
     box.innerHTML = "";
     if (!n) {
+      $("tally").hidden = true;
       const empty = document.createElement("div");
       empty.className = "empty-state";
       empty.textContent = "Waiting for students to answer. Responses will appear here automatically.";
@@ -1003,23 +1058,37 @@
       return;
     }
 
-    currentResponses.forEach((r, i) => {
-      const key = r.student_id || ("row" + i);
-      const name = r.student_name || ("Student " + (i + 1));
+    // Keep each student's arrival number fixed, whatever the sort order.
+    const list = currentResponses.map((r, i) => ({ r, n: i + 1, key: r.student_id || ("row" + i) }));
+    renderTally(list);
+    const byName = (a, b) => (a.r.student_name || "~").localeCompare(b.r.student_name || "~", undefined, { sensitivity: "base" });
+    if (sortMode === "name") list.sort(byName);
+    else if (sortMode === "answer") {
+      list.sort((a, b) => {
+        const x = norm(a.r.answer), y = norm(b.r.answer);
+        if (!x !== !y) return x ? -1 : 1;                       // blanks last
+        return x.localeCompare(y, undefined, { numeric: true }) || byName(a, b);
+      });
+    }
+
+    list.forEach(({ r, n: num, key }) => {
+      const name = r.student_name || ("Student " + num);
 
       const card = document.createElement("article");
       card.className = "response";
       if (!seenKeys.has(key) && seenKeys.size > 0) card.classList.add("fresh");
       seenKeys.add(key);
+      if (activeFilter !== null && norm(r.answer) !== activeFilter) card.classList.add("dim");
 
       const who = document.createElement("div");
       who.className = "who";
       const av = document.createElement("div");
       av.className = "avatar";
-      av.textContent = i + 1;
+      av.textContent = num;
       const nm = document.createElement("span");
       nm.className = "name";
       nm.textContent = name;
+      nm.title = name;
       const tm = document.createElement("span");
       tm.className = "time";
       tm.textContent = r.submitted_at
@@ -1031,6 +1100,7 @@
       ans.textContent = r.answer || "No answer entered";
 
       card.append(who, ans);
+      card.addEventListener("click", () => ans.classList.toggle("open"));
       box.appendChild(card);
     });
   }
