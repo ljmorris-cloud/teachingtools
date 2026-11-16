@@ -1697,6 +1697,13 @@
   let chin = null, chinBusy = false;
   const chinSend = (me, event, payload) => me.ch.send({ type: "broadcast", event, payload });
   const chinState = me => chinSend(me, "state", { phase: me.phase, round: me.round });
+  // Mirror to students: whatever shows on this screen is also broadcast as a "cast" event on the lesson channel.
+  // cast.kind: "count" (3/2/1), "board" (everyone's responses), "pick" (chosen name), "close" (hide it again)
+  let castLast = null;
+  async function cast(payload, keep) {
+    castLast = keep ? payload : null;
+    try { await chinEnsure(); if (chin) chinSend(chin, "cast", payload); } catch (e) {}
+  }
   function chinCount() { $("chinCount").textContent = chin && chin.subs.size ? "(" + chin.subs.size + ")" : ""; }
 
   async function chinEnsure() {
@@ -1712,7 +1719,7 @@
     if (chin) supabaseClient.removeChannel(chin.ch);
     const ch = supabaseClient.channel("chinit:" + token, { config: { broadcast: { self: false } } });
     const me = chin = { token, ch, round: Date.now(), phase: "open", subs: new Map(), claims: new Set() };
-    ch.on("broadcast", { event: "hello" }, () => { chinState(me); syncAnnounce(); })
+    ch.on("broadcast", { event: "hello" }, () => { chinState(me); syncAnnounce(); if (castLast && chin) chinSend(chin, "cast", castLast); })
       .on("broadcast", { event: "submit" }, ({ payload }) => chinSubmit(me, payload || {}))
       .subscribe();
     chinCount();
@@ -1780,11 +1787,15 @@
     me.phase = "countdown"; chinState(me);
     for (const n of [3, 2, 1]) {
       $("chinNum").hidden = false; $("chinNum").textContent = n;
+      cast({ kind: "count", n });
       await new Promise(r => setTimeout(r, CHIN_TICK_MS));
-      if ($("chinOverlay").hidden) { me.phase = "open"; chinState(me); chinBusy = false; return; }   // cancelled with Esc
+      if ($("chinOverlay").hidden) { cast({ kind: "close" }); me.phase = "open"; chinState(me); chinBusy = false; return; }   // cancelled with Esc
     }
     $("chinNum").hidden = true;
     chinBoard(me);   // draw the board from the responses collected so far
+    cast({ kind: "board", items: [...me.subs.values()]
+      .map((v, i) => ({ n: i + 1, name: v.name, text: v.text, at: v.at.getTime() }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })) }, true);
     // Students unlock straight away: start a fresh round for the next Chin It. The board stays on screen until you close it.
     me.subs.clear(); me.round = Date.now(); chinCount();
     me.phase = "open"; chinState(me);
@@ -1795,6 +1806,7 @@
   // (If you cancel during the 3-2-1, the responses are kept.)
   function chinClose() {
     $("chinOverlay").hidden = true;
+    cast({ kind: "close" });
     const me = chin; if (!me) return;
     if (me.phase === "revealed") { me.subs.clear(); me.round = Date.now(); chinCount(); }
     me.phase = "open"; chinState(me);
@@ -1881,6 +1893,7 @@
   }
 
   function showPick(res) {
+    cast(res.empty ? { kind: "close" } : { kind: "pick", name: res.name }, !res.empty);
     const nameEl = $("pickName"), meta = $("pickMeta"), hist = $("pickHistory");
     nameEl.classList.remove("pop"); void nameEl.offsetWidth;
     hist.textContent = "";
@@ -1924,6 +1937,7 @@
   let pickReturnFocus = null;
   function closePick() {
     $("pickOverlay").hidden = true;
+    cast({ kind: "close" });
     if (pickReturnFocus && pickReturnFocus.focus) pickReturnFocus.focus();
   }
 
