@@ -368,7 +368,8 @@
   #questionArea.whiteboard #backToLessons,
   #questionArea.whiteboard #questionSelect,
   #questionArea.whiteboard #prevQ,
-  #questionArea.whiteboard #nextQ { display: none !important; }
+  #questionArea.whiteboard #nextQ,
+  #questionArea.whiteboard .qbar { display: none !important; }
   #whiteboardButton[aria-pressed="true"] { background: var(--yellow); color: var(--dark); border-color: var(--yellow); font-weight: 800; }
 </style>
 </head>
@@ -376,7 +377,7 @@
 
 <header class="top">
   <div class="top-left"><h1>Teacher Dashboard</h1><span id="headerLesson" class="header-lesson" hidden></span><span id="headerQ" class="qbig-num header-q" hidden></span></div>
-  <div class="top-right"><div id="headerTools" hidden><button id="whiteboardButton" type="button" aria-pressed="false" title="Hide the question and dropdown (W)">Whiteboard: Off</button><button id="chinBtn" class="primary" type="button" title="Count down 3, 2, 1, then show everyone's responses">Chin It <span id="chinCount"></span></button><button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button></div><div id="userBar"><button id="logoutButton">Log out</button></div></div>
+  <div class="top-right"><div id="headerTools" hidden><button id="whiteboardButton" type="button" aria-pressed="false" title="Hide the question and toolbar (W)">Whiteboard: Off</button><button id="chinBtn" class="primary" type="button" title="Count down 3, 2, 1, then show everyone's responses">Chin It <span id="chinCount"></span></button><button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button></div><div id="userBar"><button id="logoutButton">Log out</button></div></div>
 </header>
 
 <main>
