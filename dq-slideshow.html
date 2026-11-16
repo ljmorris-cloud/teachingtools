@@ -70,6 +70,14 @@ td.fix{background:var(--okb);color:var(--ok);font-weight:800;outline:3px solid v
 @media print{#bar,#prog{display:none}}
 .chinrow{margin-top:.5em;display:flex;align-items:center;gap:.6em;flex-wrap:wrap}.chinmsg{color:var(--bad);font-size:.85em}
 body.locked #bar button:not(#th),body.locked #jump{pointer-events:none;opacity:.4}
+.chinrow{margin-top:.5em;display:flex;align-items:center;gap:.6em;flex-wrap:wrap}.chinmsg{color:var(--bad);font-size:.85em}
+body.locked #bar button:not(#th),body.locked #jump{pointer-events:none;opacity:.4}
+#hostbar{position:fixed;top:8px;right:8px;z-index:40;display:flex;gap:.4em;align-items:center}#hostbar .btn{margin:0;box-shadow:0 2px 8px #0004}
+#ov{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8em;padding:1em;overflow:auto;text-align:center}
+#ov .big{font-size:40vmin;font-weight:900;color:var(--cfu);line-height:1}#ov .name{font-size:14vmin;font-weight:900;color:var(--pri)}
+#ov .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(15em,1fr));gap:.7em;width:100%;max-width:1500px;text-align:left}
+#ov .rc{background:var(--card);border:2px solid var(--line);border-radius:.8em;padding:.6em .8em}#ov .rc b{color:var(--pri)}
+#toast{position:fixed;top:56px;right:8px;z-index:70;background:var(--navy);color:var(--navi);padding:.5em 1em;border-radius:.6em}
 </style><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script></head><body>
 <div id="prog"></div>
 <div id="top">We will understand data authenticity, accuracy and timeliness</div>
@@ -126,7 +134,7 @@ const SL=[
 /*9*/()=>L("Review",{main:`<h1>Answers: which sentences about hex colour codes are correct?</h1>${[["#ff0000 and #0000ff are the same colour.","Incorrect: the order matters. #ff0000 is red, #0000ff is blue.","i","h1"],["A hex colour like #3366ff uses 3 bytes.","Correct: three pairs of hex digits, one byte each.","c","h2"],["In hex, ff means 0 and 00 means 255.","Incorrect: ff means 255 and 00 means 0.","i","h3"]].map(a=>`<div class="card"><p><b>${a[0]}</b> ${S.ch[a[3]]?`<span class="wm">(you said ${S.ch[a[3]]==="c"?"correct":"incorrect"})</span>`:""}</p><div class="ans">${a[1]}</div></div>`).join("")}`}),
 /*10*/()=>L("Review",{main:`<h1>Grayscale</h1>${qs(["In a gray pixel, how do R, G and B compare? How many bytes does one grayscale pixel need?","A gray pixel has brightness 128. Type it as RGB values.","A 10 × 10 image is grayscale. How many bytes? How many bytes if it is RGB?"],"s10q")}<div class="grad"></div><p style="text-align:center" class="wm">Gray: brightness only, from 0 (black) to 255 (white)</p>`}),
 /*11*/()=>L("Review",{main:`<h1>Answers: Grayscale</h1>${aList(["R = G = B, so one brightness number is enough: 1 byte.","rgb(128, 128, 128), a medium gray.","Grayscale: 100 × 1 = 100 bytes. RGB: 100 × 3 = 300 bytes."]).replace(/class="q"/g,'class="q ans"')}`}),
-/*12*/()=>L("Review",{main:`<div class="big">grayscale</div><h2 style="text-align:center">Use the word in a sentence</h2><div class="cfu" style="max-width:34em;margin:0 auto"><b>HINT</b><div class="in"><p>A grayscale pixel needs only 1 byte because…</p>${ta("s12")}</div></div>`}),
+/*12*/()=>L("Review",{main:`<div class="big">grayscale</div><h2 style="text-align:center">Use the word in a sentence</h2><div class="cfu" style="max-width:34em;margin:0 auto"><b>HINT</b><div class="in"><p>A grayscale pixel needs only 1 byte because…</p>${ta("s12")}${CI.btn()}</div></div>`}),
 /*13*/()=>L("Review",{main:`<div class="big">grayscale</div><div class="ans" style="font-size:1.3em;text-align:center">A grayscale pixel needs only 1 byte because R = G = B.</div>`}),
 /*14*/()=>L("Learning intention",{main:`<h1>We will understand data authenticity, accuracy and timeliness</h1><div class="card"><h2>I can:</h2>${bul(["Identify data that is incorrect, missing or unusual.","Explain how poor-quality data can lead to mistakes.","Describe why it is important to check data before using it."])}</div>`,side:`<div class="cfu"><b>TRACK WITH ME</b></div><div class="voc"><b>READ WITH ME</b></div>`+cfu(`<p>What are we learning about today?</p><p>What's one thing you need to be able to do by the end of today's lesson?</p>${ta("c14")}`)}),
 /*15*/()=>L("Activate prior knowledge",{main:`<h2>A school has collected the following student information:</h2><p class="wm">Tap any cells you think are wrong.</p>${table(CAN[0],CAN[1],{pick:"t15"})}<div class="card" style="margin-top:.8em"><b>Discuss with a partner:</b>${bul(["Can you identify anything wrong with this information?","Which values don't make sense?","What problems could occur if the school used this data?"])}</div>`,side:`<div class="cfu"><b>MAKE THE CONNECTION</b><div class="in"><p>Students, you have previously worked with data in tables and spreadsheets, including entering, storing and organising information. You understand that information needs to be entered correctly to be useful.</p><p>This relates to the concept of data collection and organisation.</p></div></div>`}),
@@ -188,47 +196,60 @@ document.addEventListener("click",e=>{
   else if(b.dataset.sw!=null){const k=+b.dataset.sw;S.sw[k]=S.sw[k]?0:1}
   save();redraw();
 });
-/* ---------- Chin It button on CFU questions + teacher-led slides ---------- */
-const QP=new URLSearchParams(location.search),LK=(QP.get("key")||"").trim(),HOST=QP.get("host")==="1";
-const CI={sent:false,nonce:"",msg:"",phase:"open",round:0,name:"",sid:"",rows:[],typed:false,lock:false,last:0,t:0,ch:null,sb:null,
- btn(){if(HOST||!LK)return"";const open=CI.phase==="open",lab=!open?"👀 Look up at the board!":CI.sent?"✓ Sent!":CI.nonce?"Sending…":"Chin It";
+/* ---------- Live room: the teacher plays the slides; students follow and answer with Chin It ---------- */
+const QP=new URLSearchParams(location.search),ROOM=(QP.get("room")||"").trim(),HOST=QP.get("host")==="1";
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const CI={sent:false,nonce:"",msg:"",phase:"open",round:1,name:"",id:"",lock:false,last:0,t:0,ch:null,busy:false,subs:new Map(),studs:new Map(),
+ btn(){if(HOST||!ROOM||!CI.name)return"";const open=CI.phase==="open",lab=!open?"👀 Look up at the board!":CI.sent?"✓ Sent!":CI.nonce?"Sending…":"Chin It";
   return `<div class="chinrow"><button class="btn" data-chin="1"${!open||CI.sent||CI.nonce?" disabled":""}>${lab}</button><span class="chinmsg">${esc(CI.msg)}</span></div>`}};
+try{CI.id=localStorage.getItem("dq-id")||"";if(!CI.id){CI.id=Math.random().toString(36).slice(2,10);localStorage.setItem("dq-id",CI.id)}CI.name=localStorage.getItem("dq-name")||""}catch(e){CI.id=CI.id||Math.random().toString(36).slice(2,10)}
+const send=(event,payload)=>CI.ch&&CI.ch.send({type:"broadcast",event,payload});
 function gather(box){const a=[];box.querySelectorAll("[data-t]").forEach(e=>{const v=(e.value||"").trim();if(v)a.push(v)});box.querySelectorAll(".pick.on,td.sel").forEach(e=>a.push(e.textContent.trim()));return a.join(" | ").slice(0,300)}
+function setLock(on){CI.lock=on;document.body.classList.toggle("locked",on)}
+const _go=go;
+go=function(i,fromNav){if(CI.lock&&!fromNav)return;const j=Math.max(0,Math.min(N-1,i));if(j!==S.i){CI.sent=false;CI.nonce="";CI.msg=""}_go(i);if(HOST)tell()};
+/* --- student side --- */
 document.addEventListener("click",e=>{const b=e.target.closest("[data-chin]");if(!b||!CI.ch)return;
  const text=gather(b.closest(".cfu"));if(!text){CI.msg="Type a response first.";redraw();return}
  const nonce=Math.random().toString(36).slice(2);CI.nonce=nonce;CI.msg="";redraw();
- CI.ch.send({type:"broadcast",event:"submit",payload:{nonce,sid:CI.sid,name:CI.name,text}});
+ send("submit",{nonce,id:CI.id,name:CI.name,text});
  clearTimeout(CI.t);CI.t=setTimeout(()=>{if(CI.nonce===nonce){CI.nonce="";CI.msg="Your teacher’s screen didn’t answer. Try again.";redraw()}},5000)});
-const _go=go;
-go=function(i,fromNav){if(CI.lock&&!fromNav)return;const j=Math.max(0,Math.min(N-1,i));if(j!==S.i){CI.sent=false;CI.nonce="";CI.msg=""}
- _go(i);if(HOST&&parent!==window)parent.postMessage({type:"dq-slide",n:S.i+1},"*")};
-function setLock(on){CI.lock=on;document.body.classList.toggle("locked",on)}
-setInterval(()=>{if(CI.lock&&Date.now()-CI.last>30000)setLock(false)},2000);
-if(HOST){addEventListener("message",e=>{const c=e.data&&e.data.cmd;if(c==="next")go(S.i+1);else if(c==="prev")go(S.i-1)});if(parent!==window)parent.postMessage({type:"dq-slide",n:S.i+1},"*")}
-async function roster(){const r=await CI.sb.rpc("get_lesson_roster",{p_access_token:LK});
- if(!r.error&&r.data&&r.data.length){CI.rows=r.data;const m=r.data.find(x=>x.mine);if(m){CI.name=m.student_name;CI.sid=m.student_id}}else CI.typed=true}
-function gate(){let g=$("gate");if(CI.name){if(g)g.remove();return}
- if(!g){g=document.createElement("div");g.id="gate";g.style.cssText="position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;gap:.7em;align-items:center;justify-content:center;padding:1em;text-align:center";
-  g.innerHTML='<h2>Who are you?</h2><select id="gsel" style="max-width:22em"></select><input id="gtyp" type="text" maxlength="40" placeholder="Your first name" style="max-width:22em"><button class="btn" id="ggo">Continue</button><div id="gmsg" style="color:var(--bad)"></div>';
-  document.body.appendChild(g);$("ggo").onclick=pickName}
- $("gtyp").hidden=!CI.typed;$("gsel").hidden=CI.typed;
- if(!CI.typed){$("gsel").innerHTML="<option value=''>Choose your name…</option>";CI.rows.filter(r=>!r.taken).forEach(r=>$("gsel").add(new Option(r.student_name,r.student_id)))}}
-async function pickName(){$("gmsg").textContent="";
- if(CI.typed){const n=$("gtyp").value.trim().split(/\s+/)[0];if(n){CI.name=n;gate()}return}
- const r=CI.rows.find(x=>x.student_id===$("gsel").value);if(!r)return;
- if(!confirm("You chose "+r.student_name+". Is that you? You can’t change it afterwards."))return;
- const {data,error}=await CI.sb.rpc("claim_student_name",{p_access_token:LK,p_student_id:r.student_id});
- if(!error&&data==="ok"){CI.name=r.student_name;CI.sid=r.student_id;gate()}else{$("gmsg").textContent=data==="taken"?"Someone else chose that name. Tell your teacher.":"That didn’t work. Tell your teacher.";await roster();gate()}}
-function connect(){const ch=CI.ch=CI.sb.channel("chinit:"+LK,{config:{broadcast:{self:false}}});
- ch.on("broadcast",{event:"nav"},({payload:m})=>{if(!m||m.deck!=="dq")return;CI.last=Date.now();setLock(m.lock!==false);if(m.lock!==false&&m.slide-1!==S.i)go(m.slide-1,true)})
-  .on("broadcast",{event:"state"},({payload:p})=>{if(!p)return;const was=CI.phase!=="open";
-   if(CI.round&&p.round!==CI.round){CI.sent=false;CI.nonce="";CI.msg=""}
-   CI.round=p.round;CI.phase=p.phase;if(p.phase==="open"&&was){CI.sent=false;CI.nonce=""}redraw()})
-  .on("broadcast",{event:"ack"},({payload:p})=>{if(!p||p.nonce!==CI.nonce)return;CI.nonce="";clearTimeout(CI.t);
-   if(p.ok){CI.msg="";CI.sent=true}else CI.msg=p.reason==="closed"?"Too late. Wait for the next one.":p.reason==="name"?"Your name wasn’t recognised. Tell your teacher.":"Type a response first.";redraw()})
-  .subscribe(s=>{if(s==="SUBSCRIBED")ch.send({type:"broadcast",event:"hello",payload:{}});else if(s==="CHANNEL_ERROR"||s==="TIMED_OUT"){CI.msg="Couldn’t connect. Refresh the page.";redraw()}})}
-if(LK&&!HOST)(async()=>{try{CI.sb=window.supabase.createClient("https://agkixedmhuxskfdrfbcn.supabase.co","sb_publishable_F6OHTBrA9vYWhWLUagmWvA_tojihS8U");
- const {data:{session}}=await CI.sb.auth.getSession();if(!session||!session.user.is_anonymous){const {error}=await CI.sb.auth.signInAnonymously();if(error)throw error}
- await roster();gate();connect()}catch(e){CI.msg="Couldn’t connect: "+(e.message||e);redraw()}})();
+setInterval(()=>{if(!HOST&&CI.lock&&Date.now()-CI.last>30000)setLock(false)},2000);
+function askName(){const g=document.createElement("div");g.id="ov";g.innerHTML='<h2>What’s your first name?</h2><input id="gn" type="text" maxlength="30" style="max-width:20em"><button class="btn" id="gb">Join</button>';document.body.appendChild(g);
+ const ok=()=>{const n=$("gn").value.trim();if(!n)return;CI.name=n;try{localStorage.setItem("dq-name",n)}catch(e){}g.remove();send("join",{id:CI.id,name:n});redraw()};$("gb").onclick=ok;$("gn").onkeydown=e=>{if(e.key==="Enter")ok()}}
+/* --- teacher side --- */
+function tell(){send("t",{slide:S.i+1,phase:CI.phase,round:CI.round})}
+function toast(t){let e=$("toast");if(!e){e=document.createElement("div");e.id="toast";document.body.appendChild(e)}e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2500)}
+function ovl(h){let o=$("ov");if(!o){o=document.createElement("div");o.id="ov";document.body.appendChild(o)}o.innerHTML=h;const c=$("closeB");if(c)c.onclick=closeOv}
+function closeOv(){const o=$("ov");if(o)o.remove();if(CI.phase!=="open"){CI.phase="open";CI.round++;CI.subs.clear();tell();hb()}}
+function hb(){const n=[...CI.studs.values()].filter(x=>Date.now()-x.seen<45000).length;$("hbC").textContent="Chin It ("+CI.subs.size+")";$("hbP").textContent="🎲 Pick ("+n+" here)"}
+async function chinGo(){if(CI.busy||$("ov"))return;if(!CI.subs.size){toast("No responses yet");return}CI.busy=true;
+ CI.phase="countdown";tell();for(const n of [3,2,1]){ovl('<div class="big">'+n+'</div>');await sleep(800)}
+ CI.phase="board";tell();ovl('<div class="grid">'+[...CI.subs.values()].map(c=>'<div class="rc"><b>'+esc(c.name)+'</b><div>'+esc(c.text)+'</div></div>').join("")+'</div><button class="btn" id="closeB">Close</button>');CI.busy=false}
+async function pickGo(){if($("ov"))return;const a=[...CI.studs.values()].filter(x=>Date.now()-x.seen<45000).map(x=>x.name);if(!a.length){toast("No students have joined yet");return}
+ let w="";for(let i=0;i<14;i++){w=a[Math.floor(Math.random()*a.length)];ovl('<div class="name">'+esc(w)+'</div>');await sleep(70+i*12)}
+ ovl('<div class="name">'+esc(w)+'</div><div><button class="btn" id="again">Pick again</button> <button class="btn alt" id="closeB">Close</button></div>');$("again").onclick=()=>{$("ov").remove();pickGo()}}
+/* --- connect --- */
+async function boot(){
+ if(!ROOM){const g=document.createElement("div");g.id="ov";g.innerHTML="<h2>This page needs the link from your teacher.</h2>";document.body.appendChild(g);return}
+ if(HOST){const b=document.createElement("div");b.id="hostbar";b.innerHTML='<button class="btn" id="hbC">Chin It (0)</button><button class="btn" id="hbP">🎲 Pick (0 here)</button>';document.body.appendChild(b);$("hbC").onclick=chinGo;$("hbP").onclick=pickGo;
+  document.addEventListener("keydown",e=>{if(/INPUT|TEXTAREA|SELECT/.test((e.target.tagName||"")))return;const k=e.key.toLowerCase();if(k==="c")chinGo();else if(k==="p")pickGo();else if(e.key==="Escape"&&$("ov"))closeOv()})}
+ else if(!CI.name)askName();
+ try{const sb=window.supabase.createClient("https://agkixedmhuxskfdrfbcn.supabase.co","sb_publishable_F6OHTBrA9vYWhWLUagmWvA_tojihS8U",{auth:{storageKey:"dq-live-auth",persistSession:false,autoRefreshToken:false}});
+  try{await sb.auth.signInAnonymously()}catch(e){}
+  const ch=CI.ch=sb.channel("dqroom:"+ROOM,{config:{broadcast:{self:false}}});
+  if(HOST){ch.on("broadcast",{event:"join"},({payload:p})=>{if(p&&p.id){CI.studs.set(p.id,{name:String(p.name||"?").slice(0,30),seen:Date.now()});hb();tell()}})
+   .on("broadcast",{event:"submit"},({payload:p})=>{if(!p)return;const ok=CI.phase==="open"&&p.text&&p.id;
+    if(ok){CI.subs.set(p.id,{name:String(p.name||"?").slice(0,30),text:String(p.text).slice(0,300)});CI.studs.set(p.id,{name:String(p.name||"?"),seen:Date.now()});hb()}
+    send("ack",{nonce:p.nonce,ok:!!ok,reason:ok?"":"closed"})});setInterval(()=>{tell();hb()},4000)}
+  else{ch.on("broadcast",{event:"t"},({payload:m})=>{if(!m)return;CI.last=Date.now();setLock(true);const old=CI.phase+CI.round+S.i;
+    if(m.round!==CI.round){CI.sent=false;CI.nonce="";CI.msg=""}CI.round=m.round;CI.phase=m.phase;
+    if(m.slide-1!==S.i)go(m.slide-1,true);else if(old!==CI.phase+CI.round+S.i)redraw()})
+   .on("broadcast",{event:"ack"},({payload:p})=>{if(!p||p.nonce!==CI.nonce)return;CI.nonce="";clearTimeout(CI.t);
+    if(p.ok){CI.msg="";CI.sent=true}else CI.msg="Too late. Wait for the next one.";redraw()});
+   setInterval(()=>{if(CI.name)send("join",{id:CI.id,name:CI.name})},15000)}
+  ch.subscribe(s=>{if(s==="SUBSCRIBED"){if(HOST){tell();hb()}else if(CI.name)send("join",{id:CI.id,name:CI.name})}else if(s==="CHANNEL_ERROR"||s==="TIMED_OUT"){CI.msg="Couldn’t connect. Refresh the page.";redraw()}})
+ }catch(e){CI.msg="Couldn’t connect: "+(e.message||e);redraw()}}
+boot();
 draw();
 </script></body></html>
