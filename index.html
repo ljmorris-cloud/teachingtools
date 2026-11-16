@@ -358,6 +358,14 @@
   .qbar select optgroup { background: var(--dark); color: var(--cyan); font-weight: 800; font-style: normal; }
 
   [hidden] { display: none !important; }
+  /* Whiteboard mode: hides the question, lesson title and question picker so only responses remain */
+  #questionArea.whiteboard #qbig,
+  #questionArea.whiteboard #lessonTitle,
+  #questionArea.whiteboard #backToLessons,
+  #questionArea.whiteboard #questionSelect,
+  #questionArea.whiteboard #prevQ,
+  #questionArea.whiteboard #nextQ { display: none !important; }
+  #whiteboardButton[aria-pressed="true"] { background: var(--yellow); color: var(--dark); border-color: var(--yellow); font-weight: 800; }
 </style>
 </head>
 <body>
@@ -456,6 +464,7 @@
       </select>
       <button id="prevQ" aria-label="Previous question">← Prev</button>
       <button id="nextQ" aria-label="Next question">Next →</button>
+      <button id="whiteboardButton" type="button" aria-pressed="false" title="Hide the question and dropdown (W)">Whiteboard: Off</button>
       <button id="gridButton" type="button" title="Who has answered what (G)">Progress grid</button>
       <button id="flowButton" type="button" title="Question first, then reveal on the next click">Two-step: On</button>
       <button id="namesButton" type="button" title="Show or hide names (N)">Names: Shown</button>
@@ -1952,8 +1961,25 @@
     e.preventDefault();
   });
 
+  /* ---------- Whiteboard mode ---------- */
+  function setWhiteboard(on) {
+    $("questionArea").classList.toggle("whiteboard", on);
+    const b = $("whiteboardButton");
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.textContent = "Whiteboard: " + (on ? "On" : "Off");
+  }
+  $("whiteboardButton").addEventListener("click", () => setWhiteboard(!$("questionArea").classList.contains("whiteboard")));
+  document.addEventListener("keydown", e => {
+    if ($("questionArea").hidden || !$("pickOverlay").hidden || !$("chinOverlay").hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    const wb = $("questionArea").classList.contains("whiteboard");
+    if (e.key.toLowerCase() === "w" || (e.key === "Escape" && wb)) { setWhiteboard(e.key === "Escape" ? false : !wb); e.preventDefault(); }
+  });
+
   /* ---------- Navigation ---------- */
   $("backToClasses").addEventListener("click", loadClasses);
+  $("backToLessons").addEventListener("click", () => { setWhiteboard(false); });
   $("backToLessons").addEventListener("click", () => loadLessons($("classTitle").textContent));
 </script>
 </body>
