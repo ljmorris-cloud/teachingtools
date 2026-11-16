@@ -44,6 +44,10 @@ button.primary,#send,#gb{border-color:transparent;background:linear-gradient(135
 #hs{position:fixed;z-index:5;pointer-events:none}
 #hs .hsc{position:absolute;pointer-events:auto;cursor:pointer;border:2px solid transparent;border-radius:4px;touch-action:manipulation;transition:background .1s}
 #hs .hsc:hover{background:rgba(63,224,245,.18);border-color:var(--cyan)}
+#hs input.hsc{font:inherit;font-weight:700;color:#0b4fa0;background:#fff;border:2px solid #ff9f4a;text-align:left;padding:0 4px;margin:0;border-radius:2px;outline:0;cursor:text;min-width:0}
+#hs input.hsc:focus{border-color:var(--pink);box-shadow:0 0 0 3px rgba(255,79,154,.35)}
+#hs input.hsc:not(:placeholder-shown),#hs input.hsc:hover{background:#fff}
+#hs input.hsc:disabled{opacity:.75;border-color:#aaa}
 #hs .hsc.on{background:rgba(255,79,154,.38);border:3px solid var(--pink)}
 #hs.lock .hsc{pointer-events:none}#hs.lock .hsc:hover:not(.on){background:none;border-color:transparent}
 #hsSum{flex:1;display:flex;align-items:center;font-weight:700;color:var(--yellow);padding:0 6px}
@@ -69,7 +73,7 @@ function panel(){setStat();if(HOST){$("cfu").hidden=true;return}
  $("body").hidden=!open||(C.sent&&!HS[C.cur]);$("done").hidden=open&&!C.sent;$("done").textContent=open?(HS[C.cur]?"✓ Sent! You can change it and send again.":"✓ Sent!"):"👀 Look up at the board!";hsRender();$("send").disabled=!!C.nonce}
 $("fold").onclick=()=>{const f=$("cfu").classList.toggle("fold");$("fold").textContent=f?"▴ answer":"▾ hide"};
 /* ---- student ---- */
-$("send").onclick=()=>{const text=$("txt").value.trim();if(!text){say(HS[C.cur]?"Tap at least one cell first.":"Type a response first.");return}if(C.phase!=="open"||!C.ch||C.nonce)return;
+$("send").onclick=()=>{const text=$("txt").value.trim();if(!text){say(HS[C.cur]?(HS[C.cur].mode==="type"?"Fill in at least one cell first.":"Tap at least one cell first."):"Type a response first.");return}if(C.phase!=="open"||!C.ch||C.nonce)return;
  const nonce=Math.random().toString(36).slice(2);C.nonce=nonce;say("Sending…");panel();send("submit",{nonce,id:C.id,name:C.name,text});
  clearTimeout(C.t);C.t=setTimeout(()=>{if(C.nonce===nonce){C.nonce="";say("Your teacher’s screen didn’t answer. Try again.");panel()}},5000)};
 $("txt").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("send").click()}};
@@ -77,30 +81,47 @@ function askName(){const g=document.createElement("div");g.id="ov";g.className="
  const ok=()=>{const n=$("gn").value.trim();if(!n)return;C.name=n;try{localStorage.setItem("dq-name",n)}catch(e){}g.remove();send("join",{id:C.id,name:n});panel()};$("gb").onclick=ok;$("gn").onkeydown=e=>{if(e.key==="Enter")ok()}}
 /* ---- tap-to-answer slides: students tap cells on the slide; the choices are sent as text, exactly like a typed Chin It answer ---- */
 const T27=[["Egg sandwich","6.00","24","144.00"],["Chicken wrap","7.50","18","135.00"],["Bottled water","2.00","350","700.00"],["Apple","1.50","20","30.00"],["Chocolate muffin","3.00","15",""],["Cheese toastie","5.00","12","50.00"],["Fruit salad","4.50","16","72.00"],["Iced coffee","4.00","22","88.00"],["Banana","1.00","28","280.00"],["Vegemite sandwich","5.50","-3","-16.50"],["Orange juice","3.50","14","49.00"],["Chicken salad","80.00","11","88.00"]];
-// img = slide image size; cols = [label, left, right] and rows start at y0, each rh tall (all in slide-image pixels)
-const HS={27:{img:[1100,619],cols:[["price",293,390],["units",390,508],["total",508,668]],y0:167,rh:(501-167)/12,rows:T27}};
-C.sel={};
-function hsText(n){const h=HS[n],S=C.sel[n]||new Set(),o=[];
- h.rows.forEach((row,r)=>h.cols.forEach((c,ci)=>{if(S.has(r+":"+ci))o.push(row[0]+" "+c[0]+" "+(row[ci+1]||"(blank)"))}));return o.join("; ")}
+const COLS=[["price",293,390],["units",390,508],["total",508,668]];
+// img = slide image size; rows start at y0 and are rh tall (slide-image pixels).
+// mode "tap": every cell is tappable (pick the wrong ones). mode "type": only the listed [row,col] cells are blanks to type into.
+const HS={
+ 27:{mode:"tap",img:[1100,619],cols:COLS,y0:167,rh:(501-167)/12,rows:T27,cells:T27.flatMap((_,r)=>COLS.map((_,c)=>[r,c]))},
+ 29:{mode:"type",img:[1100,619],cols:COLS,y0:167,rh:(501-167)/12,rows:T27,cells:[[2,1],[2,2],[4,2],[5,2],[8,2],[9,0],[9,1],[9,2],[11,0]]}};
+C.sel={};C.val={};
+function hsText(n){const h=HS[n],o=[];
+ h.cells.forEach(([r,c])=>{const k=r+":"+c,row=h.rows[r];
+  if(h.mode==="tap"){if((C.sel[n]||new Set()).has(k))o.push(row[0]+" "+h.cols[c][0]+" "+(row[c+1]||"(blank)"))}
+  else{const v=((C.val[n]||{})[k]||"").trim();if(v)o.push(row[0]+" "+h.cols[c][0]+" "+v)}});return o.join("; ")}
 function hsLayout(){const L=$("hs"),im=$("sl");if(!L)return;const h=HS[+L.dataset.n],r=im.getBoundingClientRect(),nw=im.naturalWidth||h.img[0],nh=im.naturalHeight||h.img[1],
- k=Math.min(r.width/nw,r.height/nh),w=nw*k,hh=nh*k;L.style.left=(r.left+(r.width-w)/2)+"px";L.style.top=(r.top+(r.height-hh)/2)+"px";L.style.width=w+"px";L.style.height=hh+"px"}
+ k=Math.min(r.width/nw,r.height/nh),w=nw*k,hh=nh*k;L.style.left=(r.left+(r.width-w)/2)+"px";L.style.top=(r.top+(r.height-hh)/2)+"px";L.style.width=w+"px";L.style.height=hh+"px";
+ L.style.fontSize=Math.max(10,h.rh*k*.68)+"px"}
+function hsMsg(){say(C.sent?"Changed. Press Send to update your answer.":"")}
 function hsRender(){let L=$("hs");const h=!HOST&&HS[C.cur];
  if(!h){if(L)L.remove();const x=$("hsSum");if(x)x.remove();$("txt").style.display="";return}
  $("txt").style.display="none";
  if(!$("hsSum")){const d=document.createElement("div");d.id="hsSum";$("row").insertBefore(d,$("txt"))}
  if(L&&+L.dataset.n!==C.cur){L.remove();L=null}
  if(!L){L=document.createElement("div");L.id="hs";L.dataset.n=C.cur;const [W,H]=h.img;
-  h.rows.forEach((row,r)=>h.cols.forEach((c,ci)=>{const d=document.createElement("div");d.className="hsc";d.dataset.k=r+":"+ci;
-   d.style.cssText="left:"+c[1]/W*100+"%;top:"+(h.y0+r*h.rh)/H*100+"%;width:"+(c[2]-c[1])/W*100+"%;height:"+h.rh/H*100+"%";
-   d.title=row[0]+" – "+c[0];d.onclick=()=>hsTap(d.dataset.k);L.appendChild(d)}));
+  h.cells.forEach(([r,c],i)=>{const col=h.cols[c],k=r+":"+c,d=document.createElement(h.mode==="type"?"input":"div");d.className="hsc";d.dataset.k=k;
+   d.style.cssText="left:"+col[1]/W*100+"%;top:"+(h.y0+r*h.rh)/H*100+"%;width:"+(col[2]-col[1])/W*100+"%;height:"+h.rh/H*100+"%";
+   d.title=h.rows[r][0]+" – "+col[0];
+   if(h.mode==="type"){d.type="text";d.maxLength=10;d.inputMode="decimal";d.autocomplete="off";d.setAttribute("aria-label",d.title);
+    d.oninput=()=>{const v=C.val[C.cur]=C.val[C.cur]||{};v[k]=d.value;if(hsText(C.cur).length>300){d.value=d.value.slice(0,-1);v[k]=d.value;say("That's the most you can send.");return}hsMsg();hsRender()};
+    d.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();const n=L.querySelectorAll(".hsc")[i+1];n?n.focus():d.blur()}}}
+   else d.onclick=()=>hsTap(k);
+   L.appendChild(d)});
   document.body.appendChild(L);hsLayout()}
- const S=C.sel[C.cur]||new Set();L.classList.toggle("lock",C.phase!=="open"||!C.got);
- L.querySelectorAll(".hsc").forEach(d=>d.classList.toggle("on",S.has(d.dataset.k)));
- const t=hsText(C.cur);$("txt").value=t;$("hsSum").textContent=S.size?S.size+" selected: tap again to undo":"Tap the cells you think are wrong";
- $("q").textContent=(HS[C.cur]&&SL[C.cur-1].cfu||"")+" (tap the table)"}
+ const lock=C.phase!=="open"||!C.got;L.classList.toggle("lock",lock);
+ const S=C.sel[C.cur]||new Set(),V=C.val[C.cur]||{};
+ L.querySelectorAll(".hsc").forEach(d=>{
+  if(h.mode==="type"){d.disabled=lock;if(document.activeElement!==d&&d.value!==(V[d.dataset.k]||""))d.value=V[d.dataset.k]||""}
+  else d.classList.toggle("on",S.has(d.dataset.k))});
+ const t=hsText(C.cur),n=h.mode==="type"?Object.values(V).filter(x=>x.trim()).length:S.size;$("txt").value=t;
+ $("hsSum").textContent=h.mode==="type"?(n?n+" of "+h.cells.length+" filled in":"Type the correct values into the blank cells"):(n?n+" selected: tap again to undo":"Tap the cells you think are wrong");
+ $("q").textContent=(SL[C.cur-1].cfu||"")+(h.mode==="type"?" (type in the table)":" (tap the table)")}
 function hsTap(k){if(C.phase!=="open")return;const S=C.sel[C.cur]=C.sel[C.cur]||new Set(),had=S.has(k);had?S.delete(k):S.add(k);
  if(hsText(C.cur).length>300){had?S.add(k):S.delete(k);say("That's the most you can send. Undo one first.");return}
- say(C.sent?"Changed. Press Send to update your answer.":"");hsRender()}
+ hsMsg();hsRender()}
 addEventListener("resize",hsLayout);$("sl").addEventListener("load",hsLayout);
 /* ---- teacher ---- */
 const tell=()=>send("t",{slide:C.cur,phase:C.phase,round:C.round});
@@ -164,7 +185,7 @@ function castShow(m){let o=$("castov");if(!m||m.kind==="close"){if(o)o.remove();
    .on("broadcast",{event:"submit"},({payload:p})=>{if(!p)return;const ok=C.phase==="open"&&p.text&&p.id;
     if(ok){C.subs.set(p.id,{name:String(p.name||"?").slice(0,30),text:String(p.text).slice(0,300),at:new Date()});C.studs.set(p.id,{name:String(p.name||"?").slice(0,30),seen:Date.now()});hb()}
     send("ack",{nonce:p.nonce,ok:!!ok})});setInterval(()=>{tell();hb()},4000)}
-  else{ch.on("broadcast",{event:"t"},({payload:m})=>{if(!m)return;C.got=true;if(m.round!==C.round){C.sent=false;C.nonce="";C.sel={};say("")}C.round=m.round;C.phase=m.phase;show(+m.slide,true)})
+  else{ch.on("broadcast",{event:"t"},({payload:m})=>{if(!m)return;C.got=true;if(m.round!==C.round){C.sent=false;C.nonce="";C.sel={};C.val={};say("")}C.round=m.round;C.phase=m.phase;show(+m.slide,true)})
    .on("broadcast",{event:"ack"},({payload:p})=>{if(!p||p.nonce!==C.nonce)return;C.nonce="";clearTimeout(C.t);if(p.ok){say("");C.sent=true}else say("Too late. Wait for the next one.");panel()});
    setInterval(()=>{if(C.name)send("join",{id:C.id,name:C.name})},15000)}
   if(!HOST){const cc=sb.channel("chinit:"+ROOM,{config:{broadcast:{self:false}}});
