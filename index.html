@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Year 8 Teacher Dashboard</title>
+<title>Teacher Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -60,6 +60,10 @@
   }
   .header-q { margin: 0; font-size: 1.25rem; padding: 5px 16px; white-space: nowrap; }
   #lessonTitle { display: none; }   /* the lesson name now lives in the header bar */
+  .top-right { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; justify-content: flex-end; }
+  #headerTools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #headerTools[hidden] { display: none; }
+  #headerTools #pickButton { margin-left: 0; }
   #userBar { display: none; align-items: center; gap: 14px; color: var(--muted); }
   main { max-width: 1700px; margin: 0 auto; padding: 14px 48px 60px; }
   h2 { font-size: 3rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; margin: 0 0 8px; }
@@ -371,8 +375,8 @@
 <body>
 
 <header class="top">
-  <div class="top-left"><h1>Year 8 Teacher Dashboard</h1><span id="headerLesson" class="header-lesson" hidden></span><span id="headerQ" class="qbig-num header-q" hidden></span></div>
-  <div id="userBar"><span id="userEmail"></span><button id="logoutButton">Log out</button></div>
+  <div class="top-left"><h1>Teacher Dashboard</h1><span id="headerLesson" class="header-lesson" hidden></span><span id="headerQ" class="qbig-num header-q" hidden></span></div>
+  <div class="top-right"><div id="headerTools" hidden><button id="whiteboardButton" type="button" aria-pressed="false" title="Hide the question and dropdown (W)">Whiteboard: Off</button><button id="chinBtn" class="primary" type="button" title="Count down 3, 2, 1, then show everyone's responses">Chin It <span id="chinCount"></span></button><button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button></div><div id="userBar"><button id="logoutButton">Log out</button></div></div>
 </header>
 
 <main>
@@ -464,15 +468,12 @@
       </select>
       <button id="prevQ" aria-label="Previous question">← Prev</button>
       <button id="nextQ" aria-label="Next question">Next →</button>
-      <button id="whiteboardButton" type="button" aria-pressed="false" title="Hide the question and dropdown (W)">Whiteboard: Off</button>
       <button id="gridButton" type="button" title="Who has answered what (G)">Progress grid</button>
       <button id="flowButton" type="button" title="Question first, then reveal on the next click">Two-step: On</button>
       <button id="namesButton" type="button" title="Show or hide names (N)">Names: Shown</button>
       <button id="sizeButton" type="button" title="Card size">Size: Auto</button>
       <button id="sortButton" type="button" title="Sort order">Sort: Time</button>
       <button id="toggleButton" disabled>Hide responses</button>
-      <button id="chinBtn" class="primary" type="button" title="Count down 3, 2, 1, then show everyone's responses">Chin It <span id="chinCount"></span></button>
-      <button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button>
       <span id="liveIndicator" class="live paused" hidden>Live</span>
     </div>
 
@@ -579,6 +580,7 @@
     ["classArea", "lessonArea", "questionArea"].forEach(id => { $(id).hidden = id !== areaId; });
     if (areaId === "questionArea") chinEnsure();
     $("headerLesson").hidden = areaId !== "questionArea";
+    $("headerTools").hidden = areaId !== "questionArea";
     if (areaId !== "questionArea") $("headerQ").hidden = true;
   }
 
@@ -603,9 +605,6 @@
   function onLoggedIn() {
     $("login").hidden = true;
     $("userBar").style.display = "flex";
-    supabaseClient.auth.getUser().then(({ data }) => {
-      $("userEmail").textContent = data && data.user ? data.user.email : "";
-    });
     setStatus("");
     const nav = loadNav();
     if (nav.classId && nav.className) restoreNav(nav).catch(() => loadClasses());
