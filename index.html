@@ -377,7 +377,7 @@
 
 <header class="top">
   <div class="top-left"><h1>Teacher Dashboard</h1><span id="headerLesson" class="header-lesson" hidden></span><span id="headerQ" class="qbig-num header-q" hidden></span></div>
-  <div class="top-right"><div id="headerTools" hidden><button id="whiteboardButton" type="button" aria-pressed="false" title="Hide the question and toolbar (W)">Whiteboard: Off</button><button id="chinBtn" class="primary" type="button" title="Count down 3, 2, 1, then show everyone's responses">Chin It <span id="chinCount"></span></button><button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button></div><div id="userBar"><button id="logoutButton">Log out</button></div></div>
+  <div class="top-right"><div id="headerTools" hidden><button id="whiteboardButton" type="button" aria-pressed="false" title="Hide the question and toolbar (W)">Whiteboard: Off</button><button id="chinBtn" class="primary" type="button" title="Count down 3, 2, 1, then show everyone's responses">Chin It <span id="chinCount"></span></button><button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button></div><div id="userBar"><span id="userEmail" hidden></span><button id="logoutButton">Log out</button></div></div>
 </header>
 
 <main>
@@ -606,6 +606,9 @@
   function onLoggedIn() {
     $("login").hidden = true;
     $("userBar").style.display = "flex";
+    supabaseClient.auth.getUser().then(({ data }) => {
+      $("userEmail").textContent = "";   // email intentionally not displayed
+    });
     setStatus("");
     const nav = loadNav();
     if (nav.classId && nav.className) restoreNav(nav).catch(() => loadClasses());
