@@ -41,6 +41,8 @@ button.primary,#send,#gb{border-color:transparent;background:linear-gradient(135
 .pick-history{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px}.pick-chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.9rem}
 #ov input{font:inherit;font-size:1.2rem;padding:12px;border-radius:12px;border:2px solid var(--line);background:#150b2e;color:var(--ink);width:min(100%,360px)}
 #toast{position:fixed;top:54px;right:8px;z-index:70;background:#2a1a5e;padding:8px 14px;border-radius:10px}
+#castov{position:fixed;inset:0;z-index:300;background:rgba(8,4,24,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;overflow:hidden}
+#castov .cgrid{width:100%;flex:1;min-height:0;overflow:auto;align-content:start}#castov .cnum{font-size:45vmin;font-weight:900;color:var(--yellow);line-height:1}
 </style></head><body>
 <div id="stat"></div>
 <div id="stage"><img id="sl" alt=""><div id="num"></div><div id="wait" hidden>Waiting for your teacher to start…</div></div>
@@ -109,6 +111,15 @@ if(HOST){const b=document.createElement("div");b.id="hostbar";b.innerHTML='<butt
  document.addEventListener("keydown",e=>{if($("pk")){if(e.key==="Escape")$("pk").remove();return}if($("ov")&&!$("ov").querySelector("input")){if(e.key==="Escape")chinClose();return}const k=e.key;
   if(k==="ArrowRight"||k==="PageDown"||k===" "){show(C.cur+1);e.preventDefault()}else if(k==="ArrowLeft"||k==="PageUp"){show(C.cur-1);e.preventDefault()}else if(k.toLowerCase()==="c")chinGo();else if(k.toLowerCase()==="p")pickGo(false)});
  $("stage").onclick=e=>{if($("ov")||$("pk"))return;show(C.cur+(e.clientX/innerWidth<.2?-1:1))}}
+/* ---- teacher dash cast: Chin It countdown/board and Pick a student, mirrored from the dash ---- */
+function castShow(m){let o=$("castov");if(!m||m.kind==="close"){if(o)o.remove();return}
+ if(!o){o=document.createElement("div");o.id="castov";document.body.appendChild(o)}o.textContent="";
+ if(m.kind==="count"){const d=document.createElement("div");d.className="cnum";d.textContent=m.n;o.appendChild(d)}
+ else if(m.kind==="pick"){const l=document.createElement("div");l.className="pick-label";l.textContent="🎲 Pick a student";const n=document.createElement("div");n.className="pick-name pop";n.textContent=m.name;o.append(l,n)}
+ else if(m.kind==="board"){const it=m.items||[],g=document.createElement("div");g.className="cgrid responses d-"+dens(it.length);
+  it.forEach(x=>{const c=document.createElement("article");c.className="response";const w=document.createElement("div");w.className="who";
+   const av=document.createElement("div");av.className="avatar";av.textContent=x.n;const nm=document.createElement("span");nm.className="rname";nm.textContent=x.name;w.append(av,nm);
+   const an=document.createElement("p");an.className="answer";an.textContent=x.text;c.append(w,an);g.appendChild(c)});o.appendChild(g)}}
 /* ---- connect ---- */
 (async()=>{show(1,true);
  if(!ROOM){const g=document.createElement("div");g.id="ov";g.className="center";g.innerHTML="<h2>This page needs the link from your teacher.</h2>";document.body.appendChild(g);return}
@@ -123,6 +134,8 @@ if(HOST){const b=document.createElement("div");b.id="hostbar";b.innerHTML='<butt
   else{ch.on("broadcast",{event:"t"},({payload:m})=>{if(!m)return;C.got=true;if(m.round!==C.round){C.sent=false;C.nonce="";say("")}C.round=m.round;C.phase=m.phase;show(+m.slide,true)})
    .on("broadcast",{event:"ack"},({payload:p})=>{if(!p||p.nonce!==C.nonce)return;C.nonce="";clearTimeout(C.t);if(p.ok){say("");C.sent=true}else say("Too late. Wait for the next one.");panel()});
    setInterval(()=>{if(C.name)send("join",{id:C.id,name:C.name})},15000)}
+  if(!HOST){const cc=sb.channel("chinit:"+ROOM,{config:{broadcast:{self:false}}});
+   cc.on("broadcast",{event:"cast"},({payload})=>castShow(payload)).subscribe(s=>{if(s==="SUBSCRIBED")cc.send({type:"broadcast",event:"hello",payload:{}})})}
   ch.subscribe(s=>{if(s==="SUBSCRIBED"){C.conn=true;setStat();if(HOST){tell();hb()}else if(C.name)send("join",{id:C.id,name:C.name})}else if(s==="CHANNEL_ERROR"||s==="TIMED_OUT")say("Couldn’t connect. Refresh the page.")})
  }catch(e){say("Couldn’t connect: "+(e.message||e))}})();
 </script></body></html>
