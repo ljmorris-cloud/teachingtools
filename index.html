@@ -2004,18 +2004,37 @@
   /* ---------- Lesson slides: shown full-screen under the header, students' screens follow ---------- */
   let deckN = 0;
   const slideLayer = $("slideLayer"), slideFrame = $("slideFrame");
-  async function toggleSlides() {
-    const on = slideLayer.hidden;
+  // The slideshow's web address is asked for once and remembered. Shift+click Slides to change it.
+  function slidesBase(change) {
+    let u = ""; try { u = localStorage.getItem("dqSlidesUrl") || ""; } catch (e) {}
+    if (!u || change) {
+      const guess = u || $("worksheetUrl").value.trim() || new URL("dq-slideshow.html", location.href).href;
+      const a = prompt("Paste the web address where your slideshow opens (starts with https://):", guess);
+      if (!a || !a.trim()) return "";
+      u = a.trim(); try { localStorage.setItem("dqSlidesUrl", u); } catch (e) {}
+    }
+    return u;
+  }
+  async function toggleSlides(change) {
+    const on = slideLayer.hidden || !!change;
     if (on) {
       await chinEnsure();
       slideLayer.style.top = document.querySelector("header.top").offsetHeight + "px";
-      if (!slideFrame.getAttribute("src") && chin) slideFrame.src = "dataquality.html?host=1&key=" + encodeURIComponent(chin.token);
+      if (change || !slideFrame.getAttribute("src")) {
+        const base = slidesBase(change);
+        if (!base || !chin) return;
+        try {
+          const u = new URL(base, location.href); u.search = ""; u.hash = "";
+          u.searchParams.set("host", "1"); u.searchParams.set("key", chin.token);
+          slideFrame.src = u.href;
+        } catch (e) { alert("That doesn't look like a web address. Shift+click Slides to try again."); return; }
+      }
     }
     slideLayer.hidden = !on;
     $("slidesButton").setAttribute("aria-pressed", on ? "true" : "false");
     if (on) slideFrame.focus();
   }
-  $("slidesButton").addEventListener("click", toggleSlides);
+  $("slidesButton").addEventListener("click", e => toggleSlides(e.shiftKey));
   window.addEventListener("message", e => {
     if (e.source === slideFrame.contentWindow && e.data && e.data.type === "dq-slide") { deckN = e.data.n; syncAnnounce(); chinEnsure().then(syncAnnounce); }
   });
@@ -2031,7 +2050,7 @@
     if ($("questionArea").hidden || e.ctrlKey || e.metaKey || e.altKey || !$("pickOverlay").hidden || !$("chinOverlay").hidden) return;
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea" || tag === "select") return;
-    if (e.key.toLowerCase() === "s") { toggleSlides(); e.preventDefault(); }
+    if (e.key.toLowerCase() === "s") { toggleSlides(false); e.preventDefault(); }
   });
 
   /* ---------- Whiteboard mode ---------- */
