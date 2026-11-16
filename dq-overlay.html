@@ -1,8 +1,9 @@
 <!DOCTYPE html><html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Data Quality</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-:root{--bg:#0c0720;--card:#1a1238;--ink:#f7f4ff;--mut:#a99fd1;--line:#3a2d70;--pink:#ff4f9a;--lime:#b6f23a;--bad:#ff7b9c;--cy:#3fe0f5;color-scheme:dark}
-*{box-sizing:border-box}html,body{height:100%;margin:0}body{background:#000;color:var(--ink);font:18px system-ui,sans-serif;overflow:hidden}
+:root{--bg:#0c0720;--card:#1a1238;--panel:#1a1238;--panel2:#241a4d;--ink:#f7f4ff;--mut:#a99fd1;--line:#3a2d70;--pink:#ff4f9a;--yellow:#ffd23f;--cy:#3fe0f5;--cyan:#3fe0f5;--violet:#a78bfa;--lime:#b6f23a;--orange:#ff9f4a;--dark:#150b2e;--bad:#ff7b9c;color-scheme:dark}
+*{box-sizing:border-box}html,body{height:100%;margin:0}body{background:#000;color:var(--ink);font:18px "Bricolage Grotesque",system-ui,sans-serif;overflow:hidden}
 [hidden]{display:none!important}#stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
 #sl{max-width:100%;max-height:100%;object-fit:contain}#num{position:absolute;left:8px;bottom:6px;background:#000a;color:#fff;font-size:12px;padding:2px 9px;border-radius:99px}
 #wait{position:absolute;inset:0;display:grid;place-items:center;background:var(--bg);color:var(--mut);font-size:1.4rem;text-align:center;padding:20px}
@@ -10,13 +11,33 @@
 #cfu.fold #body{display:none}#fold{position:absolute;right:10px;top:-34px;background:var(--pink);color:#150b2e;border:0;border-radius:10px 10px 0 0;font-weight:800;padding:4px 14px;cursor:pointer}
 #q{font-size:.85rem;color:var(--mut);max-height:2.6em;overflow:hidden}#row{display:flex;gap:8px;align-items:stretch}
 #txt{flex:1;min-height:64px;font:inherit;padding:9px;border-radius:10px;border:2px solid var(--line);background:#150b2e;color:var(--ink);resize:none}
-button{font:inherit;font-weight:800;padding:10px 18px;border:0;border-radius:12px;background:linear-gradient(135deg,var(--pink),#ff9f4a);color:#150b2e;cursor:pointer}button:disabled{opacity:.5}
+button{font:inherit;font-weight:700;cursor:pointer;border:2px solid var(--line);background:var(--panel);color:var(--ink);padding:10px 20px;border-radius:14px;transition:transform .12s,border-color .12s}button:hover:not(:disabled){border-color:var(--cyan);transform:translateY(-2px)}button:disabled{opacity:.4;cursor:not-allowed}
+button.primary,#send,#gb{border-color:transparent;background:linear-gradient(135deg,var(--pink),var(--orange));color:var(--dark);font-weight:800}
 #msg{min-height:1.1em;font-size:.85rem;color:var(--bad)}#done{text-align:center;font-weight:800;color:var(--lime);padding:6px}
 #hostbar{position:fixed;top:8px;right:8px;z-index:40;display:flex;gap:6px}#hostbar button{box-shadow:0 2px 8px #0006}
-#ov{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;overflow:auto;text-align:center}
-#ov .big{font-size:40vmin;font-weight:900;color:var(--lime);line-height:1}#ov .name{font-size:14vmin;font-weight:900;color:var(--cy)}
-#ov .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(15em,1fr));gap:10px;width:100%;max-width:1500px;text-align:left}
-#ov .rc{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:10px 14px}#ov .rc b{color:var(--cy)}
+#ov{position:fixed;inset:0;z-index:210;background:rgba(8,4,24,.97);display:flex;flex-direction:column;padding:18px;overflow:hidden}
+#ov.center{align-items:center;justify-content:center;gap:14px;text-align:center}
+#chinNum{margin:auto;font-size:45vmin;font-weight:900;color:var(--yellow);line-height:1}
+#chinBoard{display:flex;flex-direction:column;gap:14px;flex:1;min-height:0}#chinGrid{flex:1;min-height:0;overflow:auto;align-content:start}.chin-bar{display:flex;gap:12px;justify-content:center}
+.responses{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:24px}
+.response{background:var(--c,var(--pink));color:var(--dark);border-radius:24px;padding:26px 28px 30px;display:flex;flex-direction:column;gap:18px;box-shadow:0 14px 36px rgba(0,0,0,.4);animation:arrive .55s cubic-bezier(.2,1.4,.4,1)}
+@keyframes arrive{from{transform:scale(.85) rotate(-2deg);opacity:0}}
+.response:nth-child(6n+1){--c:var(--pink)}.response:nth-child(6n+2){--c:var(--yellow)}.response:nth-child(6n+3){--c:var(--cyan)}.response:nth-child(6n+4){--c:var(--lime)}.response:nth-child(6n+5){--c:var(--violet)}.response:nth-child(6n+6){--c:var(--orange)}
+.who{display:flex;align-items:center;gap:14px}.avatar{width:48px;height:48px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:1.4rem;background:var(--dark);color:var(--c,var(--pink))}
+.rname{font-weight:800;font-size:1.5rem;letter-spacing:-.02em}.time{margin-left:auto;font-size:.95rem;font-weight:600;opacity:.7}
+.answer{margin:0;font-size:2.3rem;font-weight:700;line-height:1.15;letter-spacing:-.02em;white-space:pre-wrap;overflow-wrap:anywhere}
+.responses.d-medium{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}.responses.d-medium .response{padding:16px 18px 18px;gap:10px;border-radius:18px;box-shadow:0 8px 22px rgba(0,0,0,.38)}
+.responses.d-medium .avatar{width:36px;height:36px;font-size:1.05rem}.responses.d-medium .rname{font-size:1.15rem}.responses.d-medium .time{font-size:.8rem}.responses.d-medium .answer{font-size:1.7rem}
+.responses.d-compact{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}.responses.d-compact .response{padding:10px 12px 12px;gap:6px;border-radius:14px;box-shadow:0 6px 16px rgba(0,0,0,.35)}
+.responses.d-compact .who{gap:8px;min-width:0}.responses.d-compact .avatar{width:26px;height:26px;font-size:.8rem}.responses.d-compact .rname{font-size:.95rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.responses.d-compact .time{display:none}.responses.d-compact .answer{font-size:1.35rem}
+#pk{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(8,4,24,.9);padding:20px;overflow-y:auto}
+.pick-card{width:min(1000px,100%);background:var(--panel);border:2px solid var(--line);border-radius:28px;padding:26px 30px 22px;text-align:center;box-shadow:0 0 0 6px rgba(63,224,245,.08),0 30px 80px rgba(0,0,0,.5)}
+.pick-label{color:var(--cyan);font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:.95rem}
+.pick-name{font-size:clamp(2.8rem,12vw,9rem);font-weight:900;line-height:1.05;margin:20px 0 8px;word-break:break-word;min-height:1.1em}.pick-name.small{font-size:clamp(1.6rem,5vw,3rem);color:var(--yellow)}
+.pick-name.pop{animation:pickpop .26s ease-out}@keyframes pickpop{from{transform:scale(.7);opacity:.15}to{transform:scale(1);opacity:1}}
+.pick-meta{color:var(--mut);min-height:1.5em;margin:0}.pick-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:20px 0 14px}
+.pick-options{color:var(--mut);font-size:.95rem}.pick-options label{display:inline-flex;gap:8px;align-items:center;cursor:pointer}
+.pick-history{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px}.pick-chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.9rem}
 #ov input{font:inherit;font-size:1.2rem;padding:12px;border-radius:12px;border:2px solid var(--line);background:#150b2e;color:var(--ink);width:min(100%,360px)}
 #toast{position:fixed;top:54px;right:8px;z-index:70;background:#2a1a5e;padding:8px 14px;border-radius:10px}
 </style></head><body>
@@ -41,35 +62,60 @@ $("send").onclick=()=>{const text=$("txt").value.trim();if(!text){say("Type a re
  const nonce=Math.random().toString(36).slice(2);C.nonce=nonce;say("Sending…");panel();send("submit",{nonce,id:C.id,name:C.name,text});
  clearTimeout(C.t);C.t=setTimeout(()=>{if(C.nonce===nonce){C.nonce="";say("Your teacher’s screen didn’t answer. Try again.");panel()}},5000)};
 $("txt").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("send").click()}};
-function askName(){const g=document.createElement("div");g.id="ov";g.innerHTML='<h2>What’s your first name?</h2><input id="gn" maxlength="30"><button id="gb">Join</button>';document.body.appendChild(g);
+function askName(){const g=document.createElement("div");g.id="ov";g.className="center";g.innerHTML='<h2>What’s your first name?</h2><input id="gn" maxlength="30"><button id="gb" class="primary">Join</button>';document.body.appendChild(g);
  const ok=()=>{const n=$("gn").value.trim();if(!n)return;C.name=n;try{localStorage.setItem("dq-name",n)}catch(e){}g.remove();send("join",{id:C.id,name:n});panel()};$("gb").onclick=ok;$("gn").onkeydown=e=>{if(e.key==="Enter")ok()}}
 /* ---- teacher ---- */
 const tell=()=>send("t",{slide:C.cur,phase:C.phase,round:C.round});
 function toast(t){let e=$("toast");if(!e){e=document.createElement("div");e.id="toast";document.body.appendChild(e)}e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2500)}
-function ovl(h){let o=$("ov");if(!o){o=document.createElement("div");o.id="ov";document.body.appendChild(o)}o.innerHTML=h;const c=$("closeB");if(c)c.onclick=closeOv}
-function closeOv(){const o=$("ov");if(o)o.remove();if(C.phase!=="open"){C.phase="open";C.round++;C.subs.clear();tell();hb()}}
-const here=()=>[...C.studs.values()].filter(x=>Date.now()-x.seen<45000);
+const dens=n=>n<=8?"large":n<=18?"medium":"compact";
+function chinOpen(){let o=$("ov");if(!o){o=document.createElement("div");o.id="ov";o.innerHTML='<div id="chinNum" hidden></div><div id="chinBoard" hidden><div id="chinGrid"></div><div class="chin-bar"><button id="chinNew" class="primary" type="button">New Chin It</button><button id="chinClose" type="button">Close</button></div></div>';document.body.appendChild(o);$("chinNew").onclick=$("chinClose").onclick=chinClose}return o}
+function chinClose(){const o=$("ov");if(o)o.remove();if(C.phase==="countdown"){C.phase="open";tell()}}
+const here=()=>[...C.studs.entries()].filter(([k,x])=>Date.now()-x.seen<45000);
 function hb(){$("hbC").textContent="Chin It ("+C.subs.size+")";$("hbP").textContent="🎲 Pick ("+here().length+" here)"}
-async function chinGo(){if(C.busy||$("ov"))return;if(!C.subs.size){toast("No responses yet");return}C.busy=true;
- C.phase="countdown";tell();for(const n of [3,2,1]){ovl('<div class="big">'+n+'</div>');await sleep(800)}
- C.phase="board";tell();ovl('<div class="grid">'+[...C.subs.values()].map(c=>'<div class="rc"><b>'+esc(c.name)+'</b><div>'+esc(c.text)+'</div></div>').join("")+'</div><button id="closeB">Close</button>');C.busy=false}
-async function pickGo(){if($("ov"))return;const a=here().map(x=>x.name);if(!a.length){toast("No students have joined yet");return}
- let w="";for(let i=0;i<14;i++){w=a[Math.floor(Math.random()*a.length)];ovl('<div class="name">'+esc(w)+'</div>');await sleep(70+i*12)}
- ovl('<div class="name">'+esc(w)+'</div><div><button id="again">Pick again</button> <button id="closeB">Close</button></div>');$("again").onclick=()=>{$("ov").remove();pickGo()}}
-if(HOST){const b=document.createElement("div");b.id="hostbar";b.innerHTML='<button id="hbC">Chin It (0)</button><button id="hbP">🎲 Pick (0 here)</button>';document.body.appendChild(b);$("hbC").onclick=chinGo;$("hbP").onclick=pickGo;
- document.addEventListener("keydown",e=>{if($("ov")&&!$("ov").querySelector("input")){if(e.key==="Escape")closeOv();return}const k=e.key;
-  if(k==="ArrowRight"||k==="PageDown"||k===" "){show(C.cur+1);e.preventDefault()}else if(k==="ArrowLeft"||k==="PageUp"){show(C.cur-1);e.preventDefault()}else if(k.toLowerCase()==="c")chinGo();else if(k.toLowerCase()==="p")pickGo()});
- $("stage").onclick=e=>{if($("ov"))return;show(C.cur+(e.clientX/innerWidth<.2?-1:1))}}
+const TICK=400;   // same speed as the dashboard
+async function chinGo(){if(C.busy||$("ov")||$("pk"))return;if(!C.subs.size){toast("No responses yet");return}C.busy=true;
+ chinOpen();C.phase="countdown";tell();
+ for(const n of [3,2,1]){$("chinNum").hidden=false;$("chinNum").textContent=n;await sleep(TICK);if(!$("ov")){C.phase="open";tell();C.busy=false;return}}
+ $("chinNum").hidden=true;
+ const items=[...C.subs.values()].map((v,i)=>({...v,n:i+1}));items.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));
+ const g=$("chinGrid");g.className="responses d-"+dens(items.length);g.textContent="";
+ items.forEach(it=>{const c=document.createElement("article");c.className="response";const w=document.createElement("div");w.className="who";
+  const av=document.createElement("div");av.className="avatar";av.textContent=it.n;const nm=document.createElement("span");nm.className="rname";nm.textContent=it.name;
+  const tm=document.createElement("span");tm.className="time";tm.textContent=it.at.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});w.append(av,nm,tm);
+  const an=document.createElement("p");an.className="answer";an.textContent=it.text;c.append(w,an);g.appendChild(c)});
+ $("chinBoard").hidden=false;
+ C.subs.clear();C.round=Date.now();C.phase="open";tell();hb();[1500,4000].forEach(ms=>setTimeout(()=>{if(C.phase==="open")tell()},ms));C.busy=false}
+/* ---- pick a student (same look and rules as the dashboard: instant, never the same twice in a row) ---- */
+const PK={used:new Set(),skip:new Set(),history:[],last:"",noRepeat:true};
+function randInt(n){if(n<=1)return 0;try{const max=Math.floor(4294967296/n)*n,b=new Uint32Array(1);do{crypto.getRandomValues(b)}while(b[0]>=max);return b[0]%n}catch(e){return Math.floor(Math.random()*n)}}
+function pickOpen(){let o=$("pk");if(!o){o=document.createElement("div");o.id="pk";o.innerHTML='<div class="pick-card"><div class="pick-label">🎲 Pick a student</div><div class="pick-name" id="pkName"></div><p class="pick-meta" id="pkMeta"></p><div class="pick-actions"><button class="primary" id="pkAgain" type="button">Pick again</button><button id="pkNot" type="button">Not here, pick another</button><button id="pkNew" type="button">New round</button><button id="pkClose" type="button">Close</button></div><div class="pick-options"><label><input type="checkbox" id="pkRep" checked> Don’t repeat until everyone has had a turn</label></div><div class="pick-history" id="pkHist"></div></div>';document.body.appendChild(o);
+  $("pkAgain").onclick=()=>pickGo(false);$("pkNot").onclick=()=>pickGo(true);$("pkClose").onclick=()=>o.remove();o.onclick=e=>{if(e.target===o)o.remove()};$("pkRep").onchange=e=>{PK.noRepeat=e.target.checked};
+  $("pkNew").onclick=()=>{PK.used=new Set();PK.skip=new Set();PK.history=[];PK.last="";const n=$("pkName");n.className="pick-name small";n.textContent="New round";$("pkMeta").textContent="Everyone is back in the pool. Press “Pick again”.";$("pkHist").textContent=""}}return o}
+function pickGo(notHere){if($("ov"))return;pickOpen();const n=$("pkName");n.className="pick-name";void n.offsetWidth;
+ if(notHere&&PK.last){PK.skip.add(PK.last);PK.used.delete(PK.last);PK.history.pop();PK.last=""}
+ const pool=here().filter(([id])=>!PK.skip.has(id));
+ if(!pool.length){n.className="pick-name small";n.textContent=C.studs.size?"No one left to pick":"Nobody has joined yet";$("pkMeta").textContent=C.studs.size?"Press “New round” to bring everyone back.":"Students appear here once they enter their name.";return}
+ let avail=PK.noRepeat?pool.filter(([id])=>!PK.used.has(id)):pool,note="";
+ if(!avail.length){PK.used.clear();PK.history=[];avail=pool;note="Everyone has had a turn, so a new round has started."}
+ if(avail.length>1&&PK.last)avail=avail.filter(([id])=>id!==PK.last);
+ const [id,x]=avail[randInt(avail.length)];PK.used.add(id);PK.last=id;PK.history.push(x.name);
+ n.textContent=x.name;n.classList.add("pop");
+ $("pkMeta").textContent=(PK.noRepeat?pool.filter(([i])=>!PK.used.has(i)).length+" of "+pool.length+" still to be picked this round":pool.length+" students in the pool")+(note?" · "+note:"");
+ const h=$("pkHist");h.textContent="";PK.history.slice(-12).forEach(t=>{const c=document.createElement("span");c.className="pick-chip";c.textContent=t;h.appendChild(c)})}
+if(HOST){const b=document.createElement("div");b.id="hostbar";b.innerHTML='<button id="hbC" class="primary">Chin It (0)</button><button id="hbP" class="primary">🎲 Pick (0 here)</button>';document.body.appendChild(b);$("hbC").onclick=chinGo;$("hbP").onclick=()=>pickGo(false);
+ document.addEventListener("keydown",e=>{if($("pk")){if(e.key==="Escape")$("pk").remove();return}if($("ov")&&!$("ov").querySelector("input")){if(e.key==="Escape")chinClose();return}const k=e.key;
+  if(k==="ArrowRight"||k==="PageDown"||k===" "){show(C.cur+1);e.preventDefault()}else if(k==="ArrowLeft"||k==="PageUp"){show(C.cur-1);e.preventDefault()}else if(k.toLowerCase()==="c")chinGo();else if(k.toLowerCase()==="p")pickGo(false)});
+ $("stage").onclick=e=>{if($("ov")||$("pk"))return;show(C.cur+(e.clientX/innerWidth<.2?-1:1))}}
 /* ---- connect ---- */
 (async()=>{show(1,true);
- if(!ROOM){const g=document.createElement("div");g.id="ov";g.innerHTML="<h2>This page needs the link from your teacher.</h2>";document.body.appendChild(g);return}
+ if(!ROOM){const g=document.createElement("div");g.id="ov";g.className="center";g.innerHTML="<h2>This page needs the link from your teacher.</h2>";document.body.appendChild(g);return}
  if(!HOST){$("sl").removeAttribute("src");if(!C.name)askName();panel()}
  try{const sb=window.supabase.createClient("https://agkixedmhuxskfdrfbcn.supabase.co","sb_publishable_F6OHTBrA9vYWhWLUagmWvA_tojihS8U",{auth:{storageKey:"dq-live-auth",persistSession:false,autoRefreshToken:false}});
   try{await sb.auth.signInAnonymously()}catch(e){}
   const ch=C.ch=sb.channel("dqroom:"+ROOM,{config:{broadcast:{self:false}}});
   if(HOST){ch.on("broadcast",{event:"join"},({payload:p})=>{if(p&&p.id){C.studs.set(p.id,{name:String(p.name||"?").slice(0,30),seen:Date.now()});hb();tell()}})
    .on("broadcast",{event:"submit"},({payload:p})=>{if(!p)return;const ok=C.phase==="open"&&p.text&&p.id;
-    if(ok){C.subs.set(p.id,{name:String(p.name||"?").slice(0,30),text:String(p.text).slice(0,300)});C.studs.set(p.id,{name:String(p.name||"?").slice(0,30),seen:Date.now()});hb()}
+    if(ok){C.subs.set(p.id,{name:String(p.name||"?").slice(0,30),text:String(p.text).slice(0,300),at:new Date()});C.studs.set(p.id,{name:String(p.name||"?").slice(0,30),seen:Date.now()});hb()}
     send("ack",{nonce:p.nonce,ok:!!ok})});setInterval(()=>{tell();hb()},4000)}
   else{ch.on("broadcast",{event:"t"},({payload:m})=>{if(!m)return;C.got=true;if(m.round!==C.round){C.sent=false;C.nonce="";say("")}C.round=m.round;C.phase=m.phase;show(+m.slide,true)})
    .on("broadcast",{event:"ack"},({payload:p})=>{if(!p||p.nonce!==C.nonce)return;C.nonce="";clearTimeout(C.t);if(p.ok){say("");C.sent=true}else say("Too late. Wait for the next one.");panel()});
