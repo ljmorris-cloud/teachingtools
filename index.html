@@ -1706,52 +1706,93 @@
   }
   function chinCount() { $("chinCount").textContent = chin && chin.subs.size ? "(" + chin.subs.size + ")" : ""; }
 
-  async function chinEnsure() {
+   async function chinEnsure() {
     const sid = currentSessionId;
     if (!sid) return;
     let token = lessonTokens[sid];
     if (!token) {
-      const { data } = await supabaseClient.from("sessions").select("access_token").eq("id", sid).single();
-      token = data && data.access_token;
-      if (token) lessonTokens[sid] = token;
+      try {
+        const { data } = await supabaseClient.from("sessions").select("access_token").eq("id", sid).single();
+        token = data && data.access_token;
+        if (token) lessonTokens[sid] = token;
+      } catch (e) { console.warn("chin: token lookup failed", e); }
     }
-    if (!token || (chin && chin.token === token)) return;
-    if (chin) supabaseClient.removeChannel(chin.ch);
+    // Healthy channel for this lesson already exists: nothing to do.
+    if (!token || (chin && chin.token === token && !chin.dead)) return;
+
+    // Replace a dead channel (or switch lessons). If it's the same lesson, keep the responses collected so far.
+    const prev = chin;
+    const keep = prev && prev.token === token ? prev : null;
+    if (prev) { prev.dead = true; try { supabaseClient.removeChannel(prev.ch); } catch (e) {} }
+
     const ch = supabaseClient.channel("chinit:" + token, { config: { broadcast: { self: false } } });
-    const me = chin = { token, ch, round: Date.now(), phase: "open", subs: new Map(), claims: new Set() };
+    const me = chin = {
+      token, ch, dead: false,
+      round: keep ? keep.round : Date.now(),
+      phase: keep ? keep.phase : "open",
+      subs: keep ? keep.subs : new Map(),
+      claims: keep ? keep.claims : new Set()
+    };
     ch.on("broadcast", { event: "hello" }, () => { chinState(me); syncAnnounce(); if (castLast && chin) chinSend(chin, "cast", castLast); })
       .on("broadcast", { event: "submit" }, ({ payload }) => chinSubmit(me, payload || {}))
-      .subscribe();
+      .subscribe(status => {
+        if (me !== chin || me.dead) return;           // an old channel we already replaced
+        if (status === "SUBSCRIBED") {
+          chinState(me);                               // re-sync students after a (re)connect
+          if (castLast) chinSend(me, "cast", castLast);
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          console.warn("chin: channel", status, "- reconnecting");
+          me.dead = true;                              // mark dead so chinEnsure rebuilds it
+          setTimeout(() => { chinEnsure(); }, 1500);
+        }
+      });
     chinCount();
   }
 
   async function chinClaims(me) {
-    let { data, error } = await supabaseClient.rpc("teacher_list_lesson_claims", { p_session_id: currentSessionId });
-    if (isMissingFn(error)) ({ data, error } = await supabaseClient.from("name_claims").select("student_id").eq("session_id", currentSessionId));
-    if (!error) me.claims = new Set((data || []).map(c => c.student_id));
+    try {
+      let { data, error } = await supabaseClient.rpc("teacher_list_lesson_claims", { p_session_id: currentSessionId });
+      if (isMissingFn(error)) ({ data, error } = await supabaseClient.from("name_claims").select("student_id").eq("session_id", currentSessionId));
+      if (!error) me.claims = new Set((data || []).map(c => c.student_id));
+    } catch (e) { console.warn("chin: claims lookup failed", e); }
   }
 
+  // Always answers the student, even if something throws, so they never sit on "Sending…".
   async function chinSubmit(me, p) {
     const ack = (ok, reason) => chinSend(me, "ack", { nonce: p.nonce, ok, reason });
-    const text = String(p.text || "").trim().slice(0, 300);
-    if (!text) return ack(false, "empty");
-    if (me.phase !== "open") return ack(false, "closed");
-    let key, name;
-    if (rosterRows.length) {            // same names as the worksheet: the student must hold that name in this lesson
-      const row = rosterRows.find(r => r.id === p.sid);
-      if (!row) return ack(false, "name");
-      if (!me.claims.has(row.id)) { await chinClaims(me); if (!me.claims.has(row.id)) return ack(false, "name"); }
-      key = row.id; name = row.name;
-    } else {                            // class with no list: typed first name, as in the worksheet
-      name = String(p.name || "").trim().split(/\s+/)[0].slice(0, 40);
-      if (!name) return ack(false, "name");
-      key = "n:" + name.toLowerCase();
+    try {
+      const text = String(p.text || "").trim().slice(0, 300);
+      if (!text) return ack(false, "empty");
+      if (me.phase !== "open") return ack(false, "closed");
+      let key, name;
+      if (rosterRows.length) {            // same names as the worksheet: the student must hold that name in this lesson
+        const row = rosterRows.find(r => r.id === p.sid);
+        if (!row) return ack(false, "name");
+        if (!me.claims.has(row.id)) { await chinClaims(me); if (!me.claims.has(row.id)) return ack(false, "name"); }
+        key = row.id; name = row.name;
+      } else {                            // class with no list: typed first name, as in the worksheet
+        name = String(p.name || "").trim().split(/\s+/)[0].slice(0, 40);
+        if (!name) return ack(false, "name");
+        key = "n:" + name.toLowerCase();
+      }
+      if (me.phase !== "open") return ack(false, "closed");
+      me.subs.set(key, { name, text, at: new Date() });
+      chinCount();
+      ack(true);
+    } catch (e) {
+      console.warn("chin: submit failed", e);
+      try { ack(false, "error"); } catch (e2) {}
     }
-    if (me.phase !== "open") return ack(false, "closed");
-    me.subs.set(key, { name, text, at: new Date() });
-    chinCount();
-    ack(true);
   }
+
+  // Safety net: if the laptop wakes up, wifi returns, or the channel silently died, rebuild it.
+  function chinHealthCheck() {
+    if (chin && chin.ch && (chin.ch.state === "closed" || chin.ch.state === "errored")) chin.dead = true;
+    chinEnsure();
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) chinHealthCheck(); });
+  window.addEventListener("online", chinHealthCheck);
+  setInterval(chinHealthCheck, 10000);
 
   function chinBoard(me) {
     const items = [...me.subs.values()].map((v, i) => ({ ...v, n: i + 1 }));   // number = order they arrived, like the normal cards
