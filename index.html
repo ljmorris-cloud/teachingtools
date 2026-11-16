@@ -362,6 +362,9 @@
   #headerTools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   #headerTools[hidden] { display: none; }
   #headerTools #pickButton { margin-left: 0; }
+  #slideLayer { position: fixed; left: 0; right: 0; bottom: 0; top: 70px; z-index: 100; background: #000; }
+  #slideLayer iframe { width: 100%; height: 100%; border: 0; display: block; }
+  #slidesButton[aria-pressed="true"] { background: var(--cyan); color: var(--dark); border-color: var(--cyan); font-weight: 800; }
   #syncSelect { padding: 12px 14px; border-radius: 14px; border: 2px solid var(--line); background: var(--dark); font-weight: 700; max-width: 260px; }
   #syncSelect.on { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(182,242,58,.18); }
   #syncSelect option, #syncSelect optgroup { background: var(--dark); }
@@ -377,7 +380,7 @@
 
 <header class="top">
   <div class="top-left"><h1>Teacher Dashboard</h1><span id="headerLesson" class="header-lesson" hidden></span><span id="headerQ" class="qbig-num header-q" hidden></span></div>
-  <div class="top-right"><div id="headerTools" hidden><select id="syncSelect" title="Control what students see on their worksheet" aria-label="Student screens"></select><button id="whiteboardButton" type="button" aria-pressed="false" title="Hide the question and toolbar (W)">Whiteboard: Off</button><button id="chinBtn" class="primary" type="button" title="Count down 3, 2, 1, then show everyone's responses">Chin It <span id="chinCount"></span></button><button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button></div><div id="userBar"><span id="userEmail" hidden></span><button id="logoutButton">Log out</button></div></div>
+  <div class="top-right"><div id="headerTools" hidden><select id="syncSelect" title="Control what students see on their worksheet" aria-label="Student screens"></select><button id="slidesButton" type="button" aria-pressed="false" title="Show the lesson slides (S)">Slides</button><button id="whiteboardButton" type="button" aria-pressed="false" title="Hide the question and toolbar (W)">Whiteboard: Off</button><button id="chinBtn" class="primary" type="button" title="Count down 3, 2, 1, then show everyone's responses">Chin It <span id="chinCount"></span></button><button id="pickButton" class="primary" type="button" title="Pick a student at random (P)">🎲 Pick a student</button></div><div id="userBar"><span id="userEmail" hidden></span><button id="logoutButton">Log out</button></div></div>
 </header>
 
 <main>
@@ -491,6 +494,7 @@
   </section>
 </main>
 
+<div id="slideLayer" hidden><iframe id="slideFrame" title="Lesson slides"></iframe></div>
 <div id="chinOverlay" hidden role="dialog" aria-modal="true" aria-label="Chin It">
   <div id="chinNum" hidden></div>
   <div id="chinBoard" hidden>
@@ -582,6 +586,7 @@
     if (areaId === "questionArea") chinEnsure();
     $("headerLesson").hidden = areaId !== "questionArea";
     $("headerTools").hidden = areaId !== "questionArea";
+    if (areaId !== "questionArea" && typeof slideLayer !== "undefined" && !slideLayer.hidden) toggleSlides();
     if (areaId !== "questionArea") $("headerQ").hidden = true;
   }
 
@@ -1985,7 +1990,7 @@
     return m ? { lock: true, pg: m[1], st: m[2] } : { lock: true, pg: syncVal, st: "w" };
   }
   async function syncSend() { await chinEnsure(); if (chin) chinSend(chin, "nav", syncPayload()); }
-  function syncAnnounce() { if (syncVal && chin) chinSend(chin, "nav", syncPayload()); }
+  function syncAnnounce() { if (syncVal && chin) chinSend(chin, "nav", syncPayload()); if (deckN && chin) chinSend(chin, "nav", { deck: "dq", slide: deckN, lock: true }); }
   function syncSet(v) { syncVal = v; syncSel.value = v; syncSel.classList.toggle("on", !!v); syncSend(); }
   syncSel.addEventListener("change", () => syncSet(syncSel.value));
   setInterval(syncAnnounce, 8000);   // repeat so students who joined late or missed a message catch up
@@ -1994,6 +1999,39 @@
     if (!syncVal || !e.target.value) return;
     const opt = e.target.selectedOptions[0], skill = opt && opt.parentElement && (opt.parentElement.label || "").match(/^Skill\s*(\d)/i);
     if (skill) syncSet(skill[1] + "t");
+  });
+
+  /* ---------- Lesson slides: shown full-screen under the header, students' screens follow ---------- */
+  let deckN = 0;
+  const slideLayer = $("slideLayer"), slideFrame = $("slideFrame");
+  async function toggleSlides() {
+    const on = slideLayer.hidden;
+    if (on) {
+      await chinEnsure();
+      slideLayer.style.top = document.querySelector("header.top").offsetHeight + "px";
+      if (!slideFrame.getAttribute("src") && chin) slideFrame.src = "dataquality.html?host=1&key=" + encodeURIComponent(chin.token);
+    }
+    slideLayer.hidden = !on;
+    $("slidesButton").setAttribute("aria-pressed", on ? "true" : "false");
+    if (on) slideFrame.focus();
+  }
+  $("slidesButton").addEventListener("click", toggleSlides);
+  window.addEventListener("message", e => {
+    if (e.source === slideFrame.contentWindow && e.data && e.data.type === "dq-slide") { deckN = e.data.n; syncAnnounce(); chinEnsure().then(syncAnnounce); }
+  });
+  // While the slides are showing, the arrow keys / clicker move the slides instead of the questions.
+  document.addEventListener("keydown", e => {
+    if (slideLayer.hidden || !$("pickOverlay").hidden || !$("chinOverlay").hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+    const cmd = e.key === "ArrowRight" || e.key === "PageDown" || e.key === " " ? "next" : e.key === "ArrowLeft" || e.key === "PageUp" ? "prev" : "";
+    if (!cmd) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    slideFrame.contentWindow.postMessage({ cmd }, "*");
+  }, true);
+  document.addEventListener("keydown", e => {
+    if ($("questionArea").hidden || e.ctrlKey || e.metaKey || e.altKey || !$("pickOverlay").hidden || !$("chinOverlay").hidden) return;
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    if (e.key.toLowerCase() === "s") { toggleSlides(); e.preventDefault(); }
   });
 
   /* ---------- Whiteboard mode ---------- */
